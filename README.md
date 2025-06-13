@@ -3,3 +3,6 @@ A collaboration between Open Science Computing and Frontier Geospatial, hence Op
 
 ## Converting from 1000x1000 pixel geotiff files to a single COG
 https://usgs.osn.mghpcc.org/rsignell/testing/agb_1990_cog.tif
+
+https://titiler.usgs.gov/cog/viewer
+https://usgs.osn.mghpcc.org/rsignell/testing/agb_1990_web.tif
