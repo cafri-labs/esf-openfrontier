@@ -25,7 +25,6 @@ Can warp to another projection using:
 https://titiler.usgs.gov/cog/viewer
 https://titiler.xyz.com/cog/viewer
 ```
-https://usgs.osn.mghpcc.org/rsignell/testing/agb_1990_cog.tif
-https://usgs.osn.mghpcc.org/rsignell/testing/agb_1990_web.tif
+https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif
 https://opendata.digitalglobe.com/events/mauritius-oil-spill/post-event/2020-08-12/105001001F1B5B00/105001001F1B5B00.tif
 ```
