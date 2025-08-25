@@ -15,7 +15,7 @@ Ran the notebook to create the VRTs locally.
 (pangeo) rsignell@OSC:~$ export AWS_VIRTUAL_HOSTING=yes
 (pangeo) rsignell@OSC:~$ export AWS_HTTPS=yes
 (pangeo) rsignell@OSC:~$ export AWS_DEFAULT_REGION=us-east-1
-
+```
 Can warp the VRT to Web Mercator projection using:
 ```
 (pangeo) gdalwarp  agb_1990.vrt -s_srs epsg:5070 -t_srs epsg:3857 agb_1990_web.tif
