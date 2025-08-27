@@ -20,14 +20,21 @@ Can warp the VRT to Web Mercator projection using:
 ```
 (pangeo) gdalwarp  agb_1990.vrt -s_srs epsg:5070 -t_srs epsg:3857 agb_1990_web.tif
 ```
-Converted the warped TIF to a COG using:
+Convert to COG using `rio cogeo`:
+```
+(pangeo) rsignell@OSC:~$ rio cogeo create agb_1990.vrt agb_1990_cog.tif
+```
+Or convert the warped TIF to a COG using:
 ```
 (pangeo) rsignell@OSC:~$ rio cogeo create agb_1990_web.tif agb_1990_cog_geo.tif
 
 ```
 
-[USGS titiler](https://titiler.usgs.gov/cog/viewer)
-[XYZ titiler](https://titiler.xyz.com/cog/viewer)
+Titiler viewer endpoints:
+* [USGS titiler](https://titiler.usgs.gov/cog/viewer) 
+* [XYZ titiler](https://titiler.xyz.com/cog/viewer)
 ```
-https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog_geo.tif
+The COGs must be public for titiler, so I moved one to my Open Storage Network s3-compatible endpoint.   So try dropping this COG URL in the Titiler endpoint above:
+
+ https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif
 ```
