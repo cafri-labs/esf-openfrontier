@@ -33,6 +33,6 @@ Titiler viewer endpoints:
 * [XYZ titiler](https://titiler.xyz.com/cog/viewer)
 
 The COGs must be public for titiler, so I moved one to my Open Storage Network s3-compatible endpoint.   So try dropping this COG URL in the Titiler endpoint above:
-
+```
  https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif
-
+```
