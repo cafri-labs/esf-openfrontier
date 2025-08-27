@@ -31,5 +31,7 @@ Or convert the warped TIF to a COG using:
 Titiler renders COGS as WMTS tiles using AWS lambda.  The COGs must be public for titiler, so I moved one to my Open Storage Network s3-compatible endpoint. 
 
 Here's one of the COGs viewed through Development Seeds's titiler endpoint:
+
 https://titiler.xyz/cog/viewer?url=https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif 
-(rescale from 0 to 300)
+
+(Need to scale manually from 0 to 300 until I figure out how to specify that on the URL)
