@@ -7,7 +7,6 @@ A collaboration between Open Science Computing and Frontier Geospatial, hence Op
 
 Ran the notebook to create the VRTs locally.
 
-
 ```
 (pangeo) rsignell@OSC:~$ export AWS_ACCESS_KEY_ID=AKIAUxxxxxxxxx
 (pangeo) rsignell@OSC:~$ export AWS_SECRET_ACCESS_KEY=Wkdzpxxxxxxxxxxxxx
@@ -27,7 +26,6 @@ Convert to COG using `rio cogeo`:
 Or convert the warped TIF to a COG using:
 ```
 (pangeo) rsignell@OSC:~$ rio cogeo create agb_1990_web.tif agb_1990_cog_geo.tif
-
 ```
 
 Titiler viewer endpoints:
