@@ -28,11 +28,8 @@ Or convert the warped TIF to a COG using:
 (pangeo) rsignell@OSC:~$ rio cogeo create agb_1990_web.tif agb_1990_cog_geo.tif
 ```
 
-Titiler viewer endpoints:
-* [USGS titiler](https://titiler.usgs.gov/cog/viewer) 
-* [XYZ titiler](https://titiler.xyz.com/cog/viewer)
+Titiler renders COGS as WMTS tiles using AWS lambda.  The COGs must be public for titiler, so I moved one to my Open Storage Network s3-compatible endpoint. 
 
-The COGs must be public for titiler, so I moved one to my Open Storage Network s3-compatible endpoint.   So try dropping this COG URL in the Titiler endpoint above:
-```
- https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif
-```
+Here's one of the COGs viewed through Development Seeds's titiler endpoint:
+https://titiler.xyz/cog/viewer?url=https://usgs.osn.mghpcc.org/esip/rsignell/testing/agb_1990_cog.tif 
+(rescale from 0 to 300)
