@@ -7,21 +7,28 @@ Converts ESF Landsat ensemble AGB data from per-year S3 tiles into:
 
 Usage with coiled batch:
 
-    # First, set your secrets (one time):
-    coiled secret create ESF_AWS_ACCESS_KEY_ID --value "AKIA..."
-    coiled secret create ESF_AWS_SECRET_ACCESS_KEY --value "..."
-    coiled secret create OSN_AWS_ACCESS_KEY_ID --value "..."
-    coiled secret create OSN_AWS_SECRET_ACCESS_KEY --value "..."
-
-    # Then run:
     coiled batch run \\
         --region us-east-1 \\
         --software esf \\
-        --secret-env ESF_AWS_ACCESS_KEY_ID \\
-        --secret-env ESF_AWS_SECRET_ACCESS_KEY \\
-        --secret-env OSN_AWS_ACCESS_KEY_ID \\
-        --secret-env OSN_AWS_SECRET_ACCESS_KEY \\
+        --secret-env ESF_AWS_ACCESS_KEY_ID=AKIA... \\
+        --secret-env ESF_AWS_SECRET_ACCESS_KEY=... \\
+        --secret-env OSN_AWS_ACCESS_KEY_ID=... \\
+        --secret-env OSN_AWS_SECRET_ACCESS_KEY=... \\
         -- python esf_cog_stac.py
+
+    Or use a .env file:
+
+    coiled batch run \\
+        --region us-east-1 \\
+        --software esf \\
+        --secret-env-file secrets.env \\
+        -- python esf_cog_stac.py
+
+    Where secrets.env contains:
+        ESF_AWS_ACCESS_KEY_ID=AKIA...
+        ESF_AWS_SECRET_ACCESS_KEY=...
+        OSN_AWS_ACCESS_KEY_ID=...
+        OSN_AWS_SECRET_ACCESS_KEY=...
 """
 
 import os
