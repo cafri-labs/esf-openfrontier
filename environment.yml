@@ -1,0 +1,21 @@
+name: esf
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.13
+  - boto3
+  - fsspec
+  - s3fs
+  - gdal
+  - hvplot
+  - numpy
+  - odc-stac
+  - pyproj
+  - pystac
+  - rasterio
+  - rio-cogeo
+  - shapely
+  - xarray
+  - coiled
+  - jupyterlab
