@@ -84,7 +84,8 @@
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "AGB 2020",
       "roles": [
-        "data"
+        "data",
+        "visual"
       ]
     }
   },

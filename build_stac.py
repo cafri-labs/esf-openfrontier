@@ -87,7 +87,7 @@ def build_stac():
             pystac.Asset(
                 href=cog_url,
                 media_type=pystac.MediaType.COG,
-                roles=['data'],
+                roles=['data', 'visual'],
                 title=f'AGB {year}',
             ),
         )
