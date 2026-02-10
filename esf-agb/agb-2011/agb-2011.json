@@ -63,7 +63,7 @@
   "links": [
     {
       "rel": "xyz",
-      "href": "https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2011_cog.tif&rescale=0,250&colormap_name=viridis",
+      "href": "https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2011_cog.tif&rescale=0%2C250&colormap_name=viridis",
       "type": "image/png",
       "title": "AGB 2011 XYZ tiles"
     },

@@ -97,7 +97,7 @@ def build_stac():
         xyz_href = (
             f'https://titiler.xyz/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}'
             f'?url={encoded_url}'
-            f'&rescale=0,250&colormap_name=viridis'
+            f'&rescale=0%2C250&colormap_name=viridis'
         )
         item.add_link(pystac.Link(
             rel='xyz',
