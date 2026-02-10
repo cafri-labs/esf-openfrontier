@@ -2,7 +2,7 @@
 Build COGs and STAC Catalog for ESF AGB Data.
 
 Converts ESF Landsat ensemble AGB data from per-year S3 tiles into:
-1. One COG per year — uploaded to publicly accessible OSN storage
+1. One COG per year — uploaded to publicly accessible Cloudflare R2 storage
 2. A static STAC catalog — so tools can discover and load the data
 
 Each year is processed in parallel on a separate Coiled Dask worker.
@@ -11,8 +11,8 @@ Usage:
 
     export ESF_AWS_ACCESS_KEY_ID=AKIA...
     export ESF_AWS_SECRET_ACCESS_KEY=...
-    export OSN_AWS_ACCESS_KEY_ID=...
-    export OSN_AWS_SECRET_ACCESS_KEY=...
+    export R2_ACCESS_KEY_ID=...
+    export R2_SECRET_ACCESS_KEY=...
     python esf_cog_stac.py
 
     Or put the variables in a secrets.env file (without "export") and source it:
@@ -30,15 +30,12 @@ from pathlib import Path
 import coiled
 import fsspec
 import numpy as np
-import pystac
 import rasterio
 from dask.distributed import Client, as_completed
 from osgeo import gdal
-from pyproj import Transformer
 from rasterio.crs import CRS
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
-from shapely.geometry import box, mapping
 
 # ---------- Configuration ----------
 
@@ -46,10 +43,10 @@ YEARS = range(1990, 2024)
 SOURCE_BUCKET = 'cafri-share'
 SOURCE_PREFIX = 'landsat_ensemble_agb_2.0.0'
 
-OSN_ENDPOINT = 'https://usgs.osn.mghpcc.org'
-OSN_BUCKET = 'esip'
-OSN_PREFIX = 'rsignell/esf-osc'
-PUBLIC_BASE_URL = f'{OSN_ENDPOINT}/{OSN_BUCKET}/{OSN_PREFIX}'
+R2_ENDPOINT = 'https://9cbdcb4884f86a6779032ae561e474a5.r2.cloudflarestorage.com'
+R2_BUCKET = 'osc'
+R2_PREFIX = 'esf-agb'
+PUBLIC_BASE_URL = f'https://pub-59649a08584b41c490cb84732702591a.r2.dev/{R2_PREFIX}'
 
 # Coiled cluster settings
 N_WORKERS = 34
@@ -62,8 +59,8 @@ COILED_REGION = 'us-east-1'
 CRED_ENV_VARS = [
     'ESF_AWS_ACCESS_KEY_ID',
     'ESF_AWS_SECRET_ACCESS_KEY',
-    'OSN_AWS_ACCESS_KEY_ID',
-    'OSN_AWS_SECRET_ACCESS_KEY',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
 ]
 
 
@@ -143,116 +140,35 @@ def process_year(year):
         )
         tmp_tif.unlink()
 
-        # Fix CRS: custom WKT (Albers + WGS84) → proper EPSG:5070 (Albers + NAD83)
+        # Fix CRS and embed statistics for titiler auto-scaling
         with rasterio.open(str(cog_path), 'r+',
                            IGNORE_COG_LAYOUT_BREAK='YES') as dst:
             dst.crs = CRS.from_epsg(5070)
+            data = dst.read(1)
+            valid = data[data != -9999]
+            dst.update_tags(1,
+                STATISTICS_MINIMUM=f'{valid.min():.2f}',
+                STATISTICS_MAXIMUM=f'{valid.max():.2f}',
+                STATISTICS_MEAN=f'{valid.mean():.2f}',
+                STATISTICS_STDDEV=f'{valid.std():.2f}',
+            )
 
         size_mb = cog_path.stat().st_size / 1e6
 
-        # --- Upload to OSN ---
-        osn_key = os.environ['OSN_AWS_ACCESS_KEY_ID']
-        osn_secret = os.environ['OSN_AWS_SECRET_ACCESS_KEY']
-        osn_fs = fsspec.filesystem(
-            's3', key=osn_key, secret=osn_secret,
-            client_kwargs={'endpoint_url': OSN_ENDPOINT},
+        # --- Upload to R2 ---
+        import boto3
+        r2_client = boto3.client(
+            's3',
+            endpoint_url=R2_ENDPOINT,
+            aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
+            aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
+            region_name='auto',
         )
-        s3_key = f'{OSN_PREFIX}/agb_{year}_cog.tif'
-        osn_fs.put(str(cog_path), f'{OSN_BUCKET}/{s3_key}')
+        s3_key = f'{R2_PREFIX}/agb_{year}_cog.tif'
+        r2_client.upload_file(str(cog_path), R2_BUCKET, s3_key)
 
     elapsed = time.time() - t0
     return year, size_mb, elapsed
-
-
-# ---------- STAC catalog (runs locally after cluster work) ----------
-
-def build_stac(osn_fs):
-    """Build a STAC catalog from the uploaded COGs and upload to OSN."""
-    sample_url = f'{PUBLIC_BASE_URL}/agb_{YEARS[0]}_cog.tif'
-    with rasterio.open(sample_url) as src:
-        native_bounds = src.bounds
-        crs = src.crs
-        native_transform = list(src.transform)[:6]
-        native_shape = [src.height, src.width]
-
-    transformer = Transformer.from_crs(crs, 'EPSG:4326', always_xy=True)
-    west, south = transformer.transform(native_bounds.left, native_bounds.bottom)
-    east, north = transformer.transform(native_bounds.right, native_bounds.top)
-    bbox_4326 = [west, south, east, north]
-    geometry_4326 = mapping(box(*bbox_4326))
-    proj_bbox = [native_bounds.left, native_bounds.bottom,
-                 native_bounds.right, native_bounds.top]
-
-    collection = pystac.Collection(
-        id='esf-agb',
-        title='ESF Landsat Ensemble Aboveground Biomass',
-        description=(
-            'Annual aboveground biomass (AGB) carbon estimates (Mg/ha) for the '
-            'eastern United States, derived from Landsat ensemble models. '
-            '30 m resolution, EPSG:5070. Version 2.0.0.'
-        ),
-        license='proprietary',
-        extent=pystac.Extent(
-            spatial=pystac.SpatialExtent(bboxes=[bbox_4326]),
-            temporal=pystac.TemporalExtent(
-                intervals=[[datetime(YEARS[0], 1, 1, tzinfo=timezone.utc),
-                             datetime(YEARS[-1], 1, 1, tzinfo=timezone.utc)]]
-            ),
-        ),
-        providers=[
-            pystac.Provider(
-                name='ESF / Frontier Geospatial',
-                roles=[pystac.ProviderRole.PRODUCER],
-            ),
-        ],
-    )
-
-    for year in YEARS:
-        cog_url = f'{PUBLIC_BASE_URL}/agb_{year}_cog.tif'
-        item = pystac.Item(
-            id=f'agb-{year}',
-            geometry=geometry_4326,
-            bbox=bbox_4326,
-            datetime=datetime(year, 1, 1, tzinfo=timezone.utc),
-            properties={
-                'proj:epsg': 5070,
-                'proj:shape': native_shape,
-                'proj:transform': native_transform,
-                'proj:bbox': proj_bbox,
-            },
-        )
-        item.add_asset(
-            'data',
-            pystac.Asset(
-                href=cog_url,
-                media_type=pystac.MediaType.COG,
-                roles=['data'],
-                title=f'AGB {year}',
-            ),
-        )
-        collection.add_item(item)
-
-    catalog = pystac.Catalog(
-        id='esf-openfrontier',
-        title='ESF OpenFrontier',
-        description='Geospatial datasets from the ESF / Frontier Geospatial collaboration.',
-    )
-    catalog.add_child(collection)
-    catalog.normalize_hrefs(f'{PUBLIC_BASE_URL}/stac')
-    catalog.validate_all()
-
-    stac_dir = Path('stac')
-    stac_dir.mkdir(exist_ok=True)
-    catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED,
-                 dest_href=str(stac_dir))
-
-    for json_path in stac_dir.rglob('*.json'):
-        rel_path = json_path.relative_to(stac_dir)
-        s3_key = f'{OSN_PREFIX}/stac/{rel_path}'
-        osn_fs.put(str(json_path), f'{OSN_BUCKET}/{s3_key}')
-        print(f'  uploaded {s3_key}')
-
-    print(f'\nSTAC catalog URL: {PUBLIC_BASE_URL}/stac/catalog.json')
 
 
 # ---------- Main ----------
@@ -293,15 +209,10 @@ def main():
 
     print('\nAll COGs uploaded.\n')
 
-    # Build and upload STAC catalog (runs locally, reads from public URLs)
+    # Build STAC catalog locally (saved to repo root for GitHub Pages)
     print('Building STAC catalog...')
-    osn_fs = fsspec.filesystem(
-        's3',
-        key=os.environ['OSN_AWS_ACCESS_KEY_ID'],
-        secret=os.environ['OSN_AWS_SECRET_ACCESS_KEY'],
-        client_kwargs={'endpoint_url': OSN_ENDPOINT},
-    )
-    build_stac(osn_fs)
+    from build_stac import build_stac as build_stac_local
+    build_stac_local()
 
     client.close()
     cluster.close()

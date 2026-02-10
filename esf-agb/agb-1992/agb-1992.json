@@ -80,7 +80,7 @@
   ],
   "assets": {
     "data": {
-      "href": "https://usgs.osn.mghpcc.org/esip/rsignell/esf-osc/agb_1992_cog.tif",
+      "href": "https://pub-59649a08584b41c490cb84732702591a.r2.dev/esf-agb/agb_1992_cog.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "AGB 1992",
       "roles": [

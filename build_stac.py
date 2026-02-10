@@ -1,5 +1,5 @@
 """
-Build a STAC catalog for the ESF AGB COGs on OSN.
+Build a STAC catalog for the ESF AGB COGs on Cloudflare R2.
 
 Saves catalog.json + esf-agb/ to the repo root for GitHub Pages hosting.
 
@@ -19,10 +19,8 @@ from shapely.geometry import box, mapping
 
 YEARS = range(1990, 2024)
 
-OSN_ENDPOINT = 'https://usgs.osn.mghpcc.org'
-OSN_BUCKET = 'esip'
-OSN_PREFIX = 'rsignell/esf-osc'
-PUBLIC_BASE_URL = f'{OSN_ENDPOINT}/{OSN_BUCKET}/{OSN_PREFIX}'
+R2_PREFIX = 'esf-agb'
+PUBLIC_BASE_URL = f'https://pub-59649a08584b41c490cb84732702591a.r2.dev/{R2_PREFIX}'
 
 REPO_ROOT = Path(__file__).resolve().parent
 
