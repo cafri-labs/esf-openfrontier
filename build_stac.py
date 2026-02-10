@@ -94,10 +94,10 @@ def build_stac():
             ),
         )
         encoded_url = quote(cog_url, safe='')
+        titiler_params = f'url={encoded_url}&rescale=0%2C250&colormap_name=viridis'
         xyz_href = (
             f'https://titiler.xyz/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}'
-            f'?url={encoded_url}'
-            f'&rescale=0%2C250&colormap_name=viridis'
+            f'?{titiler_params}'
         )
         item.add_link(pystac.Link(
             rel='xyz',
@@ -105,6 +105,19 @@ def build_stac():
             media_type='image/png',
             title=f'AGB {year} XYZ tiles',
         ))
+        thumbnail_href = (
+            f'https://titiler.xyz/cog/preview.png'
+            f'?{titiler_params}&max_size=512'
+        )
+        item.add_asset(
+            'thumbnail',
+            pystac.Asset(
+                href=thumbnail_href,
+                media_type='image/png',
+                roles=['thumbnail'],
+                title=f'AGB {year} preview',
+            ),
+        )
         collection.add_item(item)
 
     catalog = pystac.Catalog(

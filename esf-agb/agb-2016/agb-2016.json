@@ -94,6 +94,14 @@
       "roles": [
         "data"
       ]
+    },
+    "thumbnail": {
+      "href": "https://titiler.xyz/cog/preview.png?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2016_cog.tif&rescale=0%2C250&colormap_name=viridis&max_size=512",
+      "type": "image/png",
+      "title": "AGB 2016 preview",
+      "roles": [
+        "thumbnail"
+      ]
     }
   },
   "collection": "esf-agb"
