@@ -1,7 +1,9 @@
 {
   "type": "Feature",
   "stac_version": "1.1.0",
-  "stac_extensions": [],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/web-map-links/v1.2.0/schema.json"
+  ],
   "id": "agb-2022",
   "geometry": {
     "type": "Polygon",
@@ -60,6 +62,12 @@
   },
   "links": [
     {
+      "rel": "xyz",
+      "href": "https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2022_cog.tif&rescale=0,250&colormap_name=viridis",
+      "type": "image/png",
+      "title": "AGB 2022 XYZ tiles"
+    },
+    {
       "rel": "root",
       "href": "../../catalog.json",
       "type": "application/json",
@@ -84,8 +92,7 @@
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "AGB 2022",
       "roles": [
-        "data",
-        "visual"
+        "data"
       ]
     }
   },

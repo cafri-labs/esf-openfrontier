@@ -9,6 +9,7 @@ Usage:
 
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import pystac
 import rasterio
@@ -79,16 +80,31 @@ def build_stac():
                 'proj:transform': native_transform,
                 'proj:bbox': proj_bbox,
             },
+            stac_extensions=[
+                'https://stac-extensions.github.io/web-map-links/v1.2.0/schema.json',
+            ],
         )
         item.add_asset(
             'data',
             pystac.Asset(
                 href=cog_url,
                 media_type=pystac.MediaType.COG,
-                roles=['data', 'visual'],
+                roles=['data'],
                 title=f'AGB {year}',
             ),
         )
+        encoded_url = quote(cog_url, safe='')
+        xyz_href = (
+            f'https://titiler.xyz/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}'
+            f'?url={encoded_url}'
+            f'&rescale=0,250&colormap_name=viridis'
+        )
+        item.add_link(pystac.Link(
+            rel='xyz',
+            target=xyz_href,
+            media_type='image/png',
+            title=f'AGB {year} XYZ tiles',
+        ))
         collection.add_item(item)
 
     catalog = pystac.Catalog(
