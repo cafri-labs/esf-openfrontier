@@ -1,0 +1,108 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/web-map-links/v1.2.0/schema.json"
+  ],
+  "id": "agc-2021",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -70.01030449692234,
+          41.16005395201561
+        ],
+        [
+          -70.01030449692234,
+          44.472644584844595
+        ],
+        [
+          -80.10777406221868,
+          44.472644584844595
+        ],
+        [
+          -80.10777406221868,
+          41.16005395201561
+        ],
+        [
+          -70.01030449692234,
+          41.16005395201561
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    -80.10777406221868,
+    41.16005395201561,
+    -70.01030449692234,
+    44.472644584844595
+  ],
+  "properties": {
+    "proj:epsg": 5070,
+    "proj:shape": [
+      18000,
+      24000
+    ],
+    "proj:transform": [
+      30.0,
+      0.0,
+      1316955.0,
+      0.0,
+      -30.0,
+      2667285.0
+    ],
+    "proj:bbox": [
+      1316955.0,
+      2127285.0,
+      2036955.0,
+      2667285.0
+    ],
+    "datetime": "2021-01-01T00:00:00Z"
+  },
+  "links": [
+    {
+      "rel": "xyz",
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3%3A%2F%2Fosc%2Fesf-agc%2Fagc_2021_cog.tif&rescale=0%2C125&colormap_name=viridis",
+      "type": "image/png",
+      "title": "AGC 2021 XYZ tiles"
+    },
+    {
+      "rel": "root",
+      "href": "../../catalog.json",
+      "type": "application/json",
+      "title": "ESF OpenFrontier"
+    },
+    {
+      "rel": "collection",
+      "href": "../collection.json",
+      "type": "application/json",
+      "title": "ESF Landsat Ensemble Aboveground Carbon"
+    },
+    {
+      "rel": "parent",
+      "href": "../collection.json",
+      "type": "application/json",
+      "title": "ESF Landsat Ensemble Aboveground Carbon"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "s3://osc/esf-agc/agc_2021_cog.tif",
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "AGC 2021",
+      "roles": [
+        "data"
+      ]
+    },
+    "thumbnail": {
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/preview.png?url=s3%3A%2F%2Fosc%2Fesf-agc%2Fagc_2021_cog.tif&rescale=0%2C125&colormap_name=viridis&max_size=512",
+      "type": "image/png",
+      "title": "AGC 2021 preview",
+      "roles": [
+        "thumbnail"
+      ]
+    }
+  },
+  "collection": "esf-agc"
+}

@@ -63,7 +63,7 @@
   "links": [
     {
       "rel": "xyz",
-      "href": "https://titiler.xyz/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2003_cog.tif&rescale=0%2C250&colormap_name=viridis",
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3%3A%2F%2Fosc%2Fesf-agb%2Fagb_2003_cog.tif&rescale=0%2C250&colormap_name=viridis",
       "type": "image/png",
       "title": "AGB 2003 XYZ tiles"
     },
@@ -88,7 +88,7 @@
   ],
   "assets": {
     "data": {
-      "href": "https://pub-59649a08584b41c490cb84732702591a.r2.dev/esf-agb/agb_2003_cog.tif",
+      "href": "s3://osc/esf-agb/agb_2003_cog.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "AGB 2003",
       "roles": [
@@ -96,7 +96,7 @@
       ]
     },
     "thumbnail": {
-      "href": "https://titiler.xyz/cog/preview.png?url=https%3A%2F%2Fpub-59649a08584b41c490cb84732702591a.r2.dev%2Fesf-agb%2Fagb_2003_cog.tif&rescale=0%2C250&colormap_name=viridis&max_size=512",
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/preview.png?url=s3%3A%2F%2Fosc%2Fesf-agb%2Fagb_2003_cog.tif&rescale=0%2C250&colormap_name=viridis&max_size=512",
       "type": "image/png",
       "title": "AGB 2003 preview",
       "roles": [

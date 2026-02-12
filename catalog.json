@@ -15,6 +15,18 @@
       "href": "./esf-agb/collection.json",
       "type": "application/json",
       "title": "ESF Landsat Ensemble Aboveground Biomass"
+    },
+    {
+      "rel": "child",
+      "href": "./esf-agc/collection.json",
+      "type": "application/json",
+      "title": "ESF Landsat Ensemble Aboveground Carbon"
+    },
+    {
+      "rel": "child",
+      "href": "./esf-bgc/collection.json",
+      "type": "application/json",
+      "title": "ESF Landsat Ensemble Belowground Carbon"
     }
   ],
   "title": "ESF OpenFrontier"

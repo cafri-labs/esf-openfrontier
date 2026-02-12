@@ -1,11 +1,10 @@
 """
-Build COGs and STAC Catalog for ESF AGB Data.
+Build COGs for ESF Landsat Ensemble Data.
 
-Converts ESF Landsat ensemble AGB data from per-year S3 tiles into:
-1. One COG per year — uploaded to publicly accessible Cloudflare R2 storage
-2. A static STAC catalog — so tools can discover and load the data
+Converts ESF Landsat ensemble data from per-year S3 tiles into
+COGs uploaded to Cloudflare R2.
 
-Each year is processed in parallel on a separate Coiled Dask worker.
+Each (variable, year) pair is processed in parallel on a Coiled Dask worker.
 
 Usage:
 
@@ -14,17 +13,11 @@ Usage:
     export R2_ACCESS_KEY_ID=...
     export R2_SECRET_ACCESS_KEY=...
     python esf_cog_stac.py
-
-    Or put the variables in a secrets.env file (without "export") and source it:
-
-        source secrets.env
-        python esf_cog_stac.py
 """
 
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import coiled
@@ -39,17 +32,17 @@ from rio_cogeo.profiles import cog_profiles
 
 # ---------- Configuration ----------
 
+# VARIABLES = ['agb', 'agc', 'bgc']
+VARIABLES = ['agc', 'bgc']
 YEARS = range(1990, 2024)
 SOURCE_BUCKET = 'cafri-share'
-SOURCE_PREFIX = 'landsat_ensemble_agb_2.0.0'
+SOURCE_VERSION = '2.0.0'
 
 R2_ENDPOINT = 'https://9cbdcb4884f86a6779032ae561e474a5.r2.cloudflarestorage.com'
 R2_BUCKET = 'osc'
-R2_PREFIX = 'esf-agb'
-PUBLIC_BASE_URL = f'https://pub-59649a08584b41c490cb84732702591a.r2.dev/{R2_PREFIX}'
 
 # Coiled cluster settings
-N_WORKERS = 34
+N_WORKERS = 17
 WORKER_MEMORY = '16 GiB'
 COILED_SOFTWARE = 'esf'
 COILED_WORKSPACE = 'osc-aws'
@@ -66,8 +59,10 @@ CRED_ENV_VARS = [
 
 # ---------- Worker function ----------
 
-def process_year(year):
-    """Process a single year on a Dask worker: VRT → COG → upload to OSN."""
+def process_year(args):
+    """Process a single (variable, year) on a Dask worker: VRT -> COG -> upload."""
+    variable, year = args
+
     import os
     import tempfile
     import time
@@ -83,18 +78,25 @@ def process_year(year):
 
     t0 = time.time()
 
+    source_bucket = 'cafri-share'
+    source_prefix = f'landsat_ensemble_{variable}_2.0.0'
+    r2_endpoint = 'https://9cbdcb4884f86a6779032ae561e474a5.r2.cloudflarestorage.com'
+    r2_bucket = 'osc'
+    r2_prefix = f'esf-{variable}'
+
     # Configure GDAL for S3 reads on this worker
     esf_key = os.environ['ESF_AWS_ACCESS_KEY_ID']
     esf_secret = os.environ['ESF_AWS_SECRET_ACCESS_KEY']
-    os.environ['AWS_ACCESS_KEY_ID'] = esf_key
-    os.environ['AWS_SECRET_ACCESS_KEY'] = esf_secret
-    os.environ.pop('AWS_SESSION_TOKEN', None)
-    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-    os.environ['AWS_REQUEST_CHECKSUM_CALCULATION'] = 'WHEN_REQUIRED'
-    os.environ['AWS_RESPONSE_CHECKSUM_VALIDATION'] = 'WHEN_REQUIRED'
 
+    # Set credentials via GDAL config options (more reliable than env vars)
+    gdal.SetConfigOption('AWS_ACCESS_KEY_ID', esf_key)
+    gdal.SetConfigOption('AWS_SECRET_ACCESS_KEY', esf_secret)
+    gdal.SetConfigOption('AWS_DEFAULT_REGION', 'us-east-1')
     gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN', 'EMPTY_DIR')
     gdal.SetConfigOption('AWS_VIRTUAL_HOSTING', 'YES')
+
+    os.environ['AWS_REQUEST_CHECKSUM_CALCULATION'] = 'WHEN_REQUIRED'
+    os.environ['AWS_RESPONSE_CHECKSUM_VALIDATION'] = 'WHEN_REQUIRED'
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -102,23 +104,43 @@ def process_year(year):
         # --- Build VRT ---
         fs_read = fsspec.filesystem('s3', key=esf_key, secret=esf_secret)
         tile_keys = fs_read.glob(
-            f's3://{SOURCE_BUCKET}/{SOURCE_PREFIX}_{year}/*.tiff'
+            f's3://{source_bucket}/{source_prefix}_{year}/*.tiff'
         )
         vsi_paths = [f'/vsis3/{key}' for key in tile_keys]
 
         if not vsi_paths:
-            raise RuntimeError(f'No tiles found for year {year}')
+            raise RuntimeError(f'No tiles found for {variable} {year}')
 
-        vrt_path = tmpdir / f'agb_{year}.vrt'
+        vrt_path = tmpdir / f'{variable}_{year}.vrt'
+
+        # Verify GDAL can open a tile before building VRT
+        gdal.UseExceptions()
+        test_ds = gdal.Open(vsi_paths[0])
+        if test_ds is None:
+            err = gdal.GetLastErrorMsg()
+            raise RuntimeError(
+                f'Cannot open tile {vsi_paths[0]}: {err}'
+            )
+        test_info = f'{test_ds.RasterXSize}x{test_ds.RasterYSize}, {test_ds.RasterCount} band(s)'
+        test_ds = None
+
         vrt_options = gdal.BuildVRTOptions(
             resolution='highest', resampleAlg='nearest'
         )
         vrt_ds = gdal.BuildVRT(str(vrt_path), vsi_paths, options=vrt_options)
-        vrt_ds = None  # flush to disk
+        if vrt_ds is None:
+            err = gdal.GetLastErrorMsg()
+            raise RuntimeError(
+                f'BuildVRT returned None for {variable} {year}. '
+                f'{len(vsi_paths)} tiles ({test_info}), '
+                f'first: {vsi_paths[0]}, GDAL error: {err}'
+            )
+        vrt_ds.FlushCache()
+        vrt_ds = None
 
-        # --- Create COG with NaN → -9999 ---
-        tmp_tif = tmpdir / f'agb_{year}.tmp.tif'
-        cog_path = tmpdir / f'agb_{year}_cog.tif'
+        # --- Create COG with NaN -> -9999 ---
+        tmp_tif = tmpdir / f'{variable}_{year}.tmp.tif'
+        cog_path = tmpdir / f'{variable}_{year}_cog.tif'
 
         with rasterio.open(str(vrt_path)) as src:
             profile = src.profile.copy()
@@ -159,24 +181,26 @@ def process_year(year):
         import boto3
         r2_client = boto3.client(
             's3',
-            endpoint_url=R2_ENDPOINT,
+            endpoint_url=r2_endpoint,
             aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
             aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
             region_name='auto',
         )
-        s3_key = f'{R2_PREFIX}/agb_{year}_cog.tif'
-        r2_client.upload_file(str(cog_path), R2_BUCKET, s3_key)
+        s3_key = f'{r2_prefix}/{variable}_{year}_cog.tif'
+        r2_client.upload_file(str(cog_path), r2_bucket, s3_key)
 
     elapsed = time.time() - t0
-    return year, size_mb, elapsed
+    return variable, year, size_mb, elapsed
 
 
 # ---------- Main ----------
 
 def main():
-    years = list(YEARS)
-    print(f'Processing {len(years)} years: {years[0]}–{years[-1]}')
-    print(f'Output: {PUBLIC_BASE_URL}/\n')
+    tasks = [(var, year) for var in VARIABLES for year in YEARS]
+    print(f'Processing {len(VARIABLES)} variable(s) x {len(list(YEARS))} years = {len(tasks)} tasks')
+    print(f'Variables: {", ".join(VARIABLES)}')
+    print(f'Years: {YEARS[0]}–{YEARS[-1]}')
+    print(f'Output: R2 bucket "{R2_BUCKET}"\n')
 
     # Verify credentials are available locally before spinning up a cluster
     for var in CRED_ENV_VARS:
@@ -198,25 +222,20 @@ def main():
     client = Client(cluster)
     print(f'Dashboard: {client.dashboard_link}\n')
 
-    # Map one year per worker
-    futures = client.map(process_year, years)
+    # Map all (variable, year) pairs across workers
+    futures = client.map(process_year, tasks)
 
     completed = 0
     for future in as_completed(futures):
-        year, size_mb, elapsed = future.result()
+        variable, year, size_mb, elapsed = future.result()
         completed += 1
-        print(f'  [{completed}/{len(years)}] {year}: {size_mb:.0f} MB ({elapsed:.0f}s)')
+        print(f'  [{completed}/{len(tasks)}] {variable} {year}: {size_mb:.0f} MB ({elapsed:.0f}s)')
 
     print('\nAll COGs uploaded.\n')
 
-    # Build STAC catalog locally (saved to repo root for GitHub Pages)
-    print('Building STAC catalog...')
-    from build_stac import build_stac as build_stac_local
-    build_stac_local()
-
     client.close()
     cluster.close()
-    print('\nDone!')
+    print('Done!')
 
 
 if __name__ == '__main__':

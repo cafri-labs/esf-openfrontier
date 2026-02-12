@@ -2,7 +2,7 @@
   "type": "Collection",
   "id": "esf-agb",
   "stac_version": "1.1.0",
-  "description": "Annual aboveground biomass (AGB) carbon estimates (Mg/ha) for the eastern United States, derived from Landsat ensemble models. 30 m resolution, EPSG:5070. Version 2.0.0.",
+  "description": "Annual aboveground biomass (AGB) estimates (Mg/ha) for New York State, derived from Landsat ensemble models. 30 m resolution, EPSG:5070. Version 2.0.0.",
   "links": [
     {
       "rel": "root",
