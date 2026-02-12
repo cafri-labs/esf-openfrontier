@@ -68,6 +68,13 @@
       "title": "BGC 2000 XYZ tiles"
     },
     {
+      "rel": "wmts",
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/WMTSCapabilities.xml?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_2000_cog.tif&rescale=0%2C75&colormap_name=viridis",
+      "type": "application/xml",
+      "title": "BGC 2000 WMTS",
+      "wmts:layer": "bgc_2000"
+    },
+    {
       "rel": "root",
       "href": "../../catalog.json",
       "type": "application/json",

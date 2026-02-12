@@ -68,6 +68,13 @@
       "title": "AGB 2012 XYZ tiles"
     },
     {
+      "rel": "wmts",
+      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/WMTSCapabilities.xml?url=s3%3A%2F%2Fosc%2Fesf-agb%2Fagb_2012_cog.tif&rescale=0%2C250&colormap_name=viridis",
+      "type": "application/xml",
+      "title": "AGB 2012 WMTS",
+      "wmts:layer": "agb_2012"
+    },
+    {
       "rel": "root",
       "href": "../../catalog.json",
       "type": "application/json",

@@ -141,6 +141,18 @@ def build_stac():
                 media_type='image/png',
                 title=f'{var.upper()} {year} XYZ tiles',
             ))
+            wmts_href = (
+                f'{TITILER_BASE}/cog/WMTSCapabilities.xml'
+                f'?{titiler_params}'
+            )
+            wmts_link = pystac.Link(
+                rel='wmts',
+                target=wmts_href,
+                media_type='application/xml',
+                title=f'{var.upper()} {year} WMTS',
+            )
+            wmts_link.extra_fields['wmts:layer'] = f'{var}_{year}'
+            item.add_link(wmts_link)
             thumbnail_href = (
                 f'{TITILER_BASE}/cog/preview.png'
                 f'?{titiler_params}&max_size=512'
