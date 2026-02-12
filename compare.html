@@ -6,7 +6,6 @@
     <title>ESF OpenFrontier - Carbon Data Comparison</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-side-by-side@2.0.0/index.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -23,7 +22,7 @@
         .panel-right { right: 12px; }
         .panel-label {
             font-size: 11px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.5px; color: #666;
+            letter-spacing: 0.5px;
         }
         .panel-left .panel-label { color: #b5179e; }
         .panel-right .panel-label { color: #0077b6; }
@@ -50,21 +49,26 @@
             font-size: 11px; color: #999; margin-top: -4px;
         }
 
-        /* Style the swipe divider */
-        .leaflet-sbs-divider {
-            background-color: white;
-            width: 4px;
-            margin-left: -2px;
+        /* Swipe divider */
+        #swipe-bar {
+            position: absolute; top: 0; bottom: 0; width: 4px;
+            background: white; z-index: 999; cursor: ew-resize;
+            box-shadow: 0 0 8px rgba(0,0,0,0.4);
+            left: 50%;
         }
-        .leaflet-sbs-range {
-            z-index: 999;
+        #swipe-handle {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 40px; height: 40px; background: white; border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4); cursor: ew-resize;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #555; user-select: none;
         }
 
         .info-bar {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
             z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
             border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            font-size: 13px; color: #555; text-align: center;
+            font-size: 13px; color: #555; text-align: center; white-space: nowrap;
         }
         .info-bar kbd {
             background: #eee; padding: 2px 6px; border-radius: 3px;
@@ -74,6 +78,7 @@
 </head>
 <body>
     <div id="map"></div>
+    <div id="swipe-bar"><div id="swipe-handle">&#x2B0C;</div></div>
 
     <div class="panel panel-left">
         <span class="panel-label">Left</span>
@@ -100,7 +105,7 @@
     </div>
 
     <div class="info-bar">
-        Drag the center bar to compare &bull; Use sliders to change years &bull;
+        Drag the handle to compare &bull;
         <kbd>&larr;</kbd><kbd>&rarr;</kbd> left year &bull;
         <kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> right year
     </div>
@@ -125,12 +130,34 @@
         // State
         let leftVar = 'agb', leftYear = 1990;
         let rightVar = 'agb', rightYear = 2023;
-        let leftLayer = null, rightLayer = null, sbs = null;
+        let leftLayer = null, rightLayer = null;
+        let swipeX = window.innerWidth / 2;
+
+        function clipLeft() {
+            if (!leftLayer) return;
+            const container = leftLayer.getContainer();
+            if (container) {
+                container.style.clip = `rect(0px, ${swipeX}px, ${window.innerHeight}px, 0px)`;
+            }
+        }
+
+        function clipRight() {
+            if (!rightLayer) return;
+            const container = rightLayer.getContainer();
+            if (container) {
+                container.style.clip = `rect(0px, ${window.innerWidth}px, ${window.innerHeight}px, ${swipeX}px)`;
+            }
+        }
+
+        function updateClip() {
+            clipLeft();
+            clipRight();
+            document.getElementById('swipe-bar').style.left = swipeX + 'px';
+        }
 
         function updateLayers() {
             if (leftLayer) map.removeLayer(leftLayer);
             if (rightLayer) map.removeLayer(rightLayer);
-            if (sbs) sbs.remove();
 
             leftLayer = L.tileLayer(tileUrl(leftVar, leftYear), {
                 opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
@@ -140,11 +167,50 @@
                 opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
             }).addTo(map);
 
-            sbs = L.control.sideBySide(leftLayer, rightLayer).addTo(map);
+            // Apply clip once tiles start loading
+            leftLayer.on('load tileload', clipLeft);
+            rightLayer.on('load tileload', clipRight);
+            // Also clip immediately for cached tiles
+            setTimeout(updateClip, 50);
 
             document.getElementById('year-left').textContent = leftYear;
             document.getElementById('year-right').textContent = rightYear;
         }
+
+        // Swipe bar dragging
+        const swipeBar = document.getElementById('swipe-bar');
+        let dragging = false;
+
+        function startDrag(e) {
+            dragging = true;
+            e.preventDefault();
+            map.dragging.disable();
+        }
+        function doDrag(e) {
+            if (!dragging) return;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            swipeX = Math.max(0, Math.min(window.innerWidth, clientX));
+            updateClip();
+        }
+        function endDrag() {
+            if (!dragging) return;
+            dragging = false;
+            map.dragging.enable();
+        }
+
+        swipeBar.addEventListener('mousedown', startDrag);
+        swipeBar.addEventListener('touchstart', startDrag);
+        document.addEventListener('mousemove', doDrag);
+        document.addEventListener('touchmove', doDrag);
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+
+        // Re-clip on map move/zoom and window resize
+        map.on('move zoom moveend zoomend', updateClip);
+        window.addEventListener('resize', () => {
+            swipeX = Math.max(0, Math.min(window.innerWidth, swipeX));
+            updateClip();
+        });
 
         // Left controls
         document.getElementById('var-left').addEventListener('change', (e) => {
