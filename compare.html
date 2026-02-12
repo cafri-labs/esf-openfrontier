@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESF OpenFrontier - Carbon Data Comparison</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-side-by-side@2.0.0/index.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+        .panel {
+            position: absolute; top: 12px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 12px 16px;
+            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column; gap: 8px;
+            min-width: 180px;
+        }
+        .panel-left { left: 12px; }
+        .panel-right { right: 12px; }
+        .panel-label {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.5px; color: #666;
+        }
+        .panel-left .panel-label { color: #b5179e; }
+        .panel-right .panel-label { color: #0077b6; }
+
+        .panel select {
+            padding: 6px 8px; border: 2px solid #ccc; border-radius: 6px;
+            font-size: 13px; font-weight: 600; background: white; cursor: pointer;
+        }
+        .panel-left select:focus { border-color: #b5179e; outline: none; }
+        .panel-right select:focus { border-color: #0077b6; outline: none; }
+
+        .panel .year-display {
+            font-size: 28px; font-weight: 800; text-align: center; line-height: 1;
+        }
+        .panel-left .year-display { color: #b5179e; }
+        .panel-right .year-display { color: #0077b6; }
+
+        .panel input[type="range"] { width: 100%; cursor: pointer; }
+        .panel-left input[type="range"] { accent-color: #b5179e; }
+        .panel-right input[type="range"] { accent-color: #0077b6; }
+
+        .year-endpoints {
+            display: flex; justify-content: space-between;
+            font-size: 11px; color: #999; margin-top: -4px;
+        }
+
+        /* Style the swipe divider */
+        .leaflet-sbs-divider {
+            background-color: white;
+            width: 4px;
+            margin-left: -2px;
+        }
+        .leaflet-sbs-range {
+            z-index: 999;
+        }
+
+        .info-bar {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 13px; color: #555; text-align: center;
+        }
+        .info-bar kbd {
+            background: #eee; padding: 2px 6px; border-radius: 3px;
+            border: 1px solid #ccc; font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div class="panel panel-left">
+        <span class="panel-label">Left</span>
+        <select id="var-left">
+            <option value="agb" selected>AGB - Biomass</option>
+            <option value="agc">AGC - Carbon</option>
+            <option value="bgc">BGC - Below Carbon</option>
+        </select>
+        <div class="year-display" id="year-left">1990</div>
+        <input type="range" id="slider-left" min="1990" max="2023" value="1990" step="1">
+        <div class="year-endpoints"><span>1990</span><span>2023</span></div>
+    </div>
+
+    <div class="panel panel-right">
+        <span class="panel-label">Right</span>
+        <select id="var-right">
+            <option value="agb" selected>AGB - Biomass</option>
+            <option value="agc">AGC - Carbon</option>
+            <option value="bgc">BGC - Below Carbon</option>
+        </select>
+        <div class="year-display" id="year-right">2023</div>
+        <input type="range" id="slider-right" min="1990" max="2023" value="2023" step="1">
+        <div class="year-endpoints"><span>1990</span><span>2023</span></div>
+    </div>
+
+    <div class="info-bar">
+        Drag the center bar to compare &bull; Use sliders to change years &bull;
+        <kbd>&larr;</kbd><kbd>&rarr;</kbd> left year &bull;
+        <kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> right year
+    </div>
+
+    <script>
+        const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+
+        function tileUrl(variable, year) {
+            return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
+                + `?variable=${variable}&time=${year}&colormap_name=viridis`;
+        }
+
+        // Initialize map
+        const map = L.map('map', { zoomControl: false }).setView([42.8, -75.5], 7);
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        // State
+        let leftVar = 'agb', leftYear = 1990;
+        let rightVar = 'agb', rightYear = 2023;
+        let leftLayer = null, rightLayer = null, sbs = null;
+
+        function updateLayers() {
+            if (leftLayer) map.removeLayer(leftLayer);
+            if (rightLayer) map.removeLayer(rightLayer);
+            if (sbs) sbs.remove();
+
+            leftLayer = L.tileLayer(tileUrl(leftVar, leftYear), {
+                opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
+            }).addTo(map);
+
+            rightLayer = L.tileLayer(tileUrl(rightVar, rightYear), {
+                opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
+            }).addTo(map);
+
+            sbs = L.control.sideBySide(leftLayer, rightLayer).addTo(map);
+
+            document.getElementById('year-left').textContent = leftYear;
+            document.getElementById('year-right').textContent = rightYear;
+        }
+
+        // Left controls
+        document.getElementById('var-left').addEventListener('change', (e) => {
+            leftVar = e.target.value;
+            updateLayers();
+        });
+        document.getElementById('slider-left').addEventListener('input', (e) => {
+            leftYear = parseInt(e.target.value);
+            updateLayers();
+        });
+
+        // Right controls
+        document.getElementById('var-right').addEventListener('change', (e) => {
+            rightVar = e.target.value;
+            updateLayers();
+        });
+        document.getElementById('slider-right').addEventListener('input', (e) => {
+            rightYear = parseInt(e.target.value);
+            updateLayers();
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'SELECT') return;
+            if (e.shiftKey) {
+                if (e.key === 'ArrowLeft' && rightYear > 1990) {
+                    rightYear--;
+                    document.getElementById('slider-right').value = rightYear;
+                    updateLayers();
+                }
+                if (e.key === 'ArrowRight' && rightYear < 2023) {
+                    rightYear++;
+                    document.getElementById('slider-right').value = rightYear;
+                    updateLayers();
+                }
+            } else {
+                if (e.key === 'ArrowLeft' && leftYear > 1990) {
+                    leftYear--;
+                    document.getElementById('slider-left').value = leftYear;
+                    updateLayers();
+                }
+                if (e.key === 'ArrowRight' && leftYear < 2023) {
+                    leftYear++;
+                    document.getElementById('slider-left').value = leftYear;
+                    updateLayers();
+                }
+            }
+        });
+
+        updateLayers();
+    </script>
+</body>
+</html>
