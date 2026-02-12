@@ -38,28 +38,13 @@ TILE_MATRIX_LIMITS = [
 ]
 
 
-def build_limits_xml():
-    """Build the TileMatrixSetLimits XML fragment."""
-    parts = ''
-    for z, min_row, max_row, min_col, max_col in TILE_MATRIX_LIMITS:
-        parts += f"""
-                        <TileMatrixLimits>
-                        <TileMatrix>{z}</TileMatrix>
-                        <MinTileRow>{min_row}</MinTileRow>
-                        <MaxTileRow>{max_row}</MaxTileRow>
-                        <MinTileCol>{min_col}</MinTileCol>
-                        <MaxTileCol>{max_col}</MaxTileCol>
-                        </TileMatrixLimits>"""
-    return parts
-
-
-def build_year_layer(var, year, var_info):
-    """Build a single year layer XML block (child of a variable group)."""
+def build_layer(var, year, var_info):
+    """Build a single WMTS layer XML block."""
     cog_s3 = f's3://{R2_BUCKET}/esf-{var}/{var}_{year}_cog.tif'
     encoded_s3 = quote(cog_s3, safe='')
     rescale = quote(var_info['rescale'], safe='')
     identifier = f'{var.upper()}_{year}'
-    title = f'{year}'
+    title = f'{var.upper()} - {var_info["title"]} {year}'
 
     template = (
         f'{TITILER_BASE}/cog/tiles/WebMercatorQuad'
@@ -67,50 +52,49 @@ def build_year_layer(var, year, var_info):
         f'?url={encoded_s3}&amp;rescale={rescale}&amp;colormap_name=viridis'
     )
 
-    return f"""                <Layer>
-                    <ows:Title>{title}</ows:Title>
-                    <ows:Identifier>{identifier}</ows:Identifier>
-                    <ows:WGS84BoundingBox crs="urn:ogc:def:crs:OGC:2:84">
-                        <ows:LowerCorner>{LOWER_CORNER}</ows:LowerCorner>
-                        <ows:UpperCorner>{UPPER_CORNER}</ows:UpperCorner>
-                    </ows:WGS84BoundingBox>
-                    <Style isDefault="true">
-                        <ows:Title>default</ows:Title>
-                        <ows:Identifier>default</ows:Identifier>
-                    </Style>
-                    <Format>image/png</Format>
-                    <TileMatrixSetLink>
-                        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>
-                        <TileMatrixSetLimits>{build_limits_xml()}
-                        </TileMatrixSetLimits>
-                    </TileMatrixSetLink>
-                    <ResourceURL format="image/png" resourceType="tile" template="{template}" />
-                </Layer>"""
+    limits_xml = ''
+    for z, min_row, max_row, min_col, max_col in TILE_MATRIX_LIMITS:
+        limits_xml += f"""
+                    <TileMatrixLimits>
+                    <TileMatrix>{z}</TileMatrix>
+                    <MinTileRow>{min_row}</MinTileRow>
+                    <MaxTileRow>{max_row}</MaxTileRow>
+                    <MinTileCol>{min_col}</MinTileCol>
+                    <MaxTileCol>{max_col}</MaxTileCol>
+                    </TileMatrixLimits>"""
+
+    return f"""        <Layer>
+            <ows:Title>{title}</ows:Title>
+            <ows:Identifier>{identifier}</ows:Identifier>
+            <ows:WGS84BoundingBox crs="urn:ogc:def:crs:OGC:2:84">
+                <ows:LowerCorner>{LOWER_CORNER}</ows:LowerCorner>
+                <ows:UpperCorner>{UPPER_CORNER}</ows:UpperCorner>
+            </ows:WGS84BoundingBox>
+            <Style isDefault="true">
+                <ows:Title>default</ows:Title>
+                <ows:Identifier>default</ows:Identifier>
+            </Style>
+            <Format>image/png</Format>
+            <TileMatrixSetLink>
+                <TileMatrixSet>WebMercatorQuad</TileMatrixSet>
+                <TileMatrixSetLimits>{limits_xml}
+                </TileMatrixSetLimits>
+            </TileMatrixSetLink>
+            <ResourceURL format="image/png" resourceType="tile" template="{template}" />
+        </Layer>"""
 
 
 def build_wmts():
     """Generate the combined WMTS Capabilities XML."""
     getcaps_url = 'https://opensciencecomputing.github.io/esf-openfrontier/WMTSCapabilities.xml'
 
-    groups = []
-    n_layers = 0
+    layers = []
     for var, var_info in VARIABLES.items():
-        children = []
         for year in YEARS:
-            children.append(build_year_layer(var, year, var_info))
-            n_layers += 1
-        children_xml = '\n'.join(children)
-        groups.append(f"""        <Layer>
-            <ows:Title>{var_info['title']} ({var.upper()})</ows:Title>
-            <ows:Identifier>{var.upper()}</ows:Identifier>
-            <ows:WGS84BoundingBox crs="urn:ogc:def:crs:OGC:2:84">
-                <ows:LowerCorner>{LOWER_CORNER}</ows:LowerCorner>
-                <ows:UpperCorner>{UPPER_CORNER}</ows:UpperCorner>
-            </ows:WGS84BoundingBox>
-{children_xml}
-        </Layer>""")
+            layers.append(build_layer(var, year, var_info))
 
-    layers_xml = '\n'.join(groups)
+    n_layers = len(layers)
+    layers_xml = '\n'.join(layers)
 
     # WebMercatorQuad TileMatrixSet definition (EPSG:3857, standard Google/OSM grid)
     tile_matrices = ''
