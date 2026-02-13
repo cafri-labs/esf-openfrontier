@@ -64,6 +64,32 @@
             font-size: 18px; color: #555; user-select: none;
         }
 
+        /* Colorbar */
+        .colorbar {
+            position: absolute; z-index: 1000;
+            bottom: 50px; right: 12px;
+            background: rgba(255,255,255,0.95); padding: 10px 12px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            display: flex; align-items: stretch; gap: 8px;
+        }
+        .colorbar-gradient {
+            width: 18px; height: 160px; border-radius: 3px; border: 1px solid #ccc;
+            background: linear-gradient(to top,
+                #440154 0%, #482878 12.5%, #3e4989 25%, #31688e 37.5%,
+                #26828e 50%, #1f9e89 62.5%, #35b779 75%, #6ece58 87.5%,
+                #fde725 100%);
+        }
+        .colorbar-labels {
+            display: flex; flex-direction: column; justify-content: space-between;
+            font-size: 11px; font-weight: 600; color: #444;
+        }
+        .colorbar-title {
+            font-size: 11px; font-weight: 700; color: #333;
+            writing-mode: vertical-rl; text-orientation: mixed;
+            transform: rotate(180deg);
+            display: flex; align-items: center; justify-content: center;
+        }
+
         .info-bar {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
             z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
@@ -74,6 +100,16 @@
             background: #eee; padding: 2px 6px; border-radius: 3px;
             border: 1px solid #ccc; font-size: 12px;
         }
+
+        /* Point query popup */
+        .leaflet-popup-content { font-family: inherit; font-size: 13px; }
+        .point-val { font-size: 18px; font-weight: 700; }
+        .point-label { font-size: 11px; color: #666; }
+        .point-row { margin-bottom: 6px; }
+        .point-row:last-child { margin-bottom: 0; }
+        .point-left { color: #b5179e; }
+        .point-right { color: #0077b6; }
+        .point-loading { color: #999; font-style: italic; }
     </style>
 </head>
 <body>
@@ -104,18 +140,39 @@
         <div class="year-endpoints"><span>1990</span><span>2023</span></div>
     </div>
 
+    <div class="colorbar" id="colorbar">
+        <div class="colorbar-title" id="colorbar-title">AGB (Mg/ha)</div>
+        <div class="colorbar-gradient"></div>
+        <div class="colorbar-labels">
+            <span id="cb-max">250</span>
+            <span id="cb-mid"></span>
+            <span id="cb-min">0</span>
+        </div>
+    </div>
+
     <div class="info-bar">
-        Drag the handle to compare &bull;
+        Click map for values &bull; Drag handle to compare &bull;
         <kbd>&larr;</kbd><kbd>&rarr;</kbd> left year &bull;
         <kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> right year
     </div>
 
     <script>
         const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+        const R2_BUCKET = 'osc';
+
+        const VAR_INFO = {
+            agb: { label: 'AGB', unit: 'Mg/ha', max: 250 },
+            agc: { label: 'AGC', unit: 'Mg C/ha', max: 125 },
+            bgc: { label: 'BGC', unit: 'Mg C/ha', max: 75 },
+        };
 
         function tileUrl(variable, year) {
             return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
                 + `?variable=${variable}&time=${year}&colormap_name=viridis`;
+        }
+
+        function cogUrl(variable, year) {
+            return `s3://${R2_BUCKET}/esf-${variable}/${variable}_${year}_cog.tif`;
         }
 
         // Initialize map
@@ -133,11 +190,28 @@
         let leftLayer = null, rightLayer = null;
         let swipeX = window.innerWidth / 2;
 
+        // Colorbar
+        function updateColorbar() {
+            const vars = new Set([leftVar, rightVar]);
+            if (vars.size === 1) {
+                const v = VAR_INFO[leftVar];
+                document.getElementById('colorbar-title').textContent = `${v.label} (${v.unit})`;
+                document.getElementById('cb-max').textContent = v.max;
+                document.getElementById('cb-mid').textContent = Math.round(v.max / 2);
+                document.getElementById('cb-min').textContent = '0';
+            } else {
+                const vl = VAR_INFO[leftVar], vr = VAR_INFO[rightVar];
+                document.getElementById('colorbar-title').textContent = 'viridis';
+                document.getElementById('cb-max').textContent = `${vl.label}:${vl.max} / ${vr.label}:${vr.max}`;
+                document.getElementById('cb-mid').textContent = '';
+                document.getElementById('cb-min').textContent = '0';
+            }
+        }
+
         function clipLeft() {
             if (!leftLayer) return;
             const container = leftLayer.getContainer();
             if (container) {
-                // Convert screen coords to layer coords (accounts for pan transform)
                 const nw = map.containerPointToLayerPoint([0, 0]);
                 const se = map.containerPointToLayerPoint(map.getSize());
                 const clipX = nw.x + (swipeX / window.innerWidth) * (se.x - nw.x);
@@ -174,14 +248,14 @@
                 opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
             }).addTo(map);
 
-            // Apply clip once tiles start loading
             leftLayer.on('load tileload', clipLeft);
             rightLayer.on('load tileload', clipRight);
-            // Also clip immediately for cached tiles
             setTimeout(updateClip, 50);
 
             document.getElementById('year-left').textContent = leftYear;
             document.getElementById('year-right').textContent = rightYear;
+
+            updateColorbar();
         }
 
         // Swipe bar dragging
@@ -217,6 +291,49 @@
         window.addEventListener('resize', () => {
             swipeX = Math.max(0, Math.min(window.innerWidth, swipeX));
             updateClip();
+        });
+
+        // Point query on click
+        map.on('click', async (e) => {
+            const { lng, lat } = e.latlng;
+
+            const popup = L.popup()
+                .setLatLng(e.latlng)
+                .setContent('<span class="point-loading">Loading values...</span>')
+                .openOn(map);
+
+            try {
+                const [leftRes, rightRes] = await Promise.all([
+                    fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(leftVar, leftYear))}`).then(r => r.json()),
+                    fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(rightVar, rightYear))}`).then(r => r.json()),
+                ]);
+
+                const leftVal = leftRes.values?.[0];
+                const rightVal = rightRes.values?.[0];
+                const vl = VAR_INFO[leftVar], vr = VAR_INFO[rightVar];
+
+                function fmt(val, nodata) {
+                    if (val === null || val === undefined || val === nodata || val === -9999) return 'No data';
+                    return val.toFixed(1);
+                }
+
+                let html = '';
+                html += `<div class="point-row"><span class="point-label point-left">${vl.label} ${leftYear} (Left):</span><br>`;
+                html += `<span class="point-val point-left">${fmt(leftVal)} ${leftVal !== -9999 && leftVal !== null ? vl.unit : ''}</span></div>`;
+                html += `<div class="point-row"><span class="point-label point-right">${vr.label} ${rightYear} (Right):</span><br>`;
+                html += `<span class="point-val point-right">${fmt(rightVal)} ${rightVal !== -9999 && rightVal !== null ? vr.unit : ''}</span></div>`;
+
+                if (leftVar === rightVar && leftVal !== -9999 && rightVal !== -9999 && leftVal !== null && rightVal !== null) {
+                    const diff = rightVal - leftVal;
+                    const sign = diff >= 0 ? '+' : '';
+                    html += `<div class="point-row"><span class="point-label">Change:</span><br>`;
+                    html += `<span class="point-val" style="color:${diff >= 0 ? '#2d6a4f' : '#d00'}">${sign}${diff.toFixed(1)} ${vl.unit}</span></div>`;
+                }
+
+                popup.setContent(html);
+            } catch (err) {
+                popup.setContent('<span class="point-loading">Error fetching values</span>');
+            }
         });
 
         // Left controls
