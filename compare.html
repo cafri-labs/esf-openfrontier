@@ -137,7 +137,11 @@
             if (!leftLayer) return;
             const container = leftLayer.getContainer();
             if (container) {
-                container.style.clip = `rect(0px, ${swipeX}px, ${window.innerHeight}px, 0px)`;
+                // Convert screen coords to layer coords (accounts for pan transform)
+                const nw = map.containerPointToLayerPoint([0, 0]);
+                const se = map.containerPointToLayerPoint(map.getSize());
+                const clipX = nw.x + (swipeX / window.innerWidth) * (se.x - nw.x);
+                container.style.clip = `rect(${nw.y}px, ${clipX}px, ${se.y}px, ${nw.x}px)`;
             }
         }
 
@@ -145,7 +149,10 @@
             if (!rightLayer) return;
             const container = rightLayer.getContainer();
             if (container) {
-                container.style.clip = `rect(0px, ${window.innerWidth}px, ${window.innerHeight}px, ${swipeX}px)`;
+                const nw = map.containerPointToLayerPoint([0, 0]);
+                const se = map.containerPointToLayerPoint(map.getSize());
+                const clipX = nw.x + (swipeX / window.innerWidth) * (se.x - nw.x);
+                container.style.clip = `rect(${nw.y}px, ${se.x}px, ${se.y}px, ${clipX}px)`;
             }
         }
 
