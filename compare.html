@@ -105,7 +105,7 @@
         }
 
         .info-bar {
-            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
             z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
             border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             font-size: 13px; color: #555; text-align: center;
@@ -142,6 +142,32 @@
         .point-right { color: #0077b6; }
         .point-loading { color: #999; font-style: italic; }
         .point-chart { width: 280px; height: 160px; margin-top: 8px; }
+        /* Mobile responsive */
+        @media (max-width: 600px) {
+            .panel {
+                padding: 4px 6px; gap: 2px; min-width: 90px;
+            }
+            .panel-left { left: 2px; }
+            .panel-right { right: 2px; }
+            .panel-label { font-size: 7px; letter-spacing: 0.3px; }
+            .panel select { padding: 2px 3px; font-size: 9px; border-width: 1px; }
+            .panel .year-display { font-size: 14px; }
+            .panel input[type="range"] { height: 12px; }
+            .year-endpoints { font-size: 7px; margin-top: -2px; }
+            #swipe-handle {
+                width: 22px; height: 22px; font-size: 11px;
+            }
+            #swipe-bar { width: 2px; }
+            .colorbar { display: none; }
+            .info-bar { padding: 4px 10px; font-size: 11px; max-width: 90vw; }
+            .control-label { font-size: 12px !important; }
+            .info-opacity input[type="range"] { width: 110px; }
+            .info-opacity span { font-size: 10px; }
+            .basemap-picker { font-size: 10px; gap: 8px; }
+            .basemap-picker label { gap: 3px; }
+            .info-bar-bottom { padding: 4px 10px; font-size: 10px; }
+            .info-bar-bottom kbd { font-size: 9px; padding: 1px 4px; }
+        }
     </style>
 </head>
 <body>
@@ -185,13 +211,13 @@
 
     <div class="info-bar">
         <span class="info-opacity">
-            <span style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555;">Overlay Opacity</span>
+            <span class="control-label" style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555;">Overlay Opacity</span>
             <span class="opacity-row">
                 <input type="range" id="opacity-slider" min="0" max="100" value="85" step="1">
                 <span id="opacity-val">85%</span>
             </span>
         </span>
-        <span style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555; margin-top: 8px;">Basemap</span>
+        <span class="control-label" style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555; margin-top: 8px;">Basemap</span>
         <div class="basemap-picker">
             <label><input type="radio" name="basemap" value="map" checked> Street Map</label>
             <label><input type="radio" name="basemap" value="satellite"> Satellite</label>
@@ -334,13 +360,21 @@
             }
         }
 
+        function getClipX() {
+            const mapRect = map.getContainer().getBoundingClientRect();
+            const nw = map.containerPointToLayerPoint([0, 0]);
+            const se = map.containerPointToLayerPoint(map.getSize());
+            const ratio = (swipeX - mapRect.left) / mapRect.width;
+            return nw.x + ratio * (se.x - nw.x);
+        }
+
         function clipLeft() {
             if (!leftLayer) return;
             const container = leftLayer.getContainer();
             if (container) {
                 const nw = map.containerPointToLayerPoint([0, 0]);
                 const se = map.containerPointToLayerPoint(map.getSize());
-                const clipX = nw.x + (swipeX / window.innerWidth) * (se.x - nw.x);
+                const clipX = getClipX();
                 container.style.clip = `rect(${nw.y}px, ${clipX}px, ${se.y}px, ${nw.x}px)`;
             }
         }
@@ -351,7 +385,7 @@
             if (container) {
                 const nw = map.containerPointToLayerPoint([0, 0]);
                 const se = map.containerPointToLayerPoint(map.getSize());
-                const clipX = nw.x + (swipeX / window.innerWidth) * (se.x - nw.x);
+                const clipX = getClipX();
                 container.style.clip = `rect(${nw.y}px, ${se.x}px, ${se.y}px, ${clipX}px)`;
             }
         }
