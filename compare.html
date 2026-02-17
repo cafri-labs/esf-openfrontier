@@ -158,7 +158,10 @@
                 width: 22px; height: 22px; font-size: 11px;
             }
             #swipe-bar { width: 2px; }
-            .colorbar { display: none; }
+            .colorbar { padding: 4px 6px; bottom: 40px; }
+            .colorbar-gradient { width: 10px; height: 80px; }
+            .colorbar-labels { font-size: 8px; }
+            .colorbar-title { font-size: 8px; }
             .info-bar { padding: 4px 10px; font-size: 11px; max-width: 90vw; }
             .control-label { font-size: 12px !important; }
             .info-opacity input[type="range"] { width: 110px; }
@@ -489,6 +492,7 @@
                 }
 
                 let html = '';
+                html += `<div class="point-row"><span class="point-label">Coordinates:</span><br><span class="point-label">${lat.toFixed(4)}, ${lng.toFixed(4)}</span></div>`;
                 html += `<div class="point-row"><span class="point-label point-left">${vl.label} ${leftYear} (Left):</span><br>`;
                 html += `<span class="point-val point-left">${fmt(leftVal)} ${isValid(leftVal) ? vl.unit : ''}</span></div>`;
                 html += `<div class="point-row"><span class="point-label point-right">${vr.label} ${rightYear} (Right):</span><br>`;
