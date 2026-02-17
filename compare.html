@@ -6,6 +6,7 @@
     <title>ESF OpenFrontier - Carbon Data Comparison</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -47,6 +48,19 @@
         .year-endpoints {
             display: flex; justify-content: space-between;
             font-size: 11px; color: #999; margin-top: -4px;
+        }
+        .info-opacity {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            margin-top: 6px;
+        }
+        .info-opacity .opacity-row {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .info-opacity input[type="range"] {
+            width: 160px; cursor: pointer; vertical-align: middle;
+        }
+        .info-opacity span {
+            font-size: 12px; font-weight: 600; color: #444; min-width: 32px;
         }
 
         /* Swipe divider */
@@ -91,10 +105,27 @@
         }
 
         .info-bar {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 13px; color: #555; text-align: center;
+        }
+        .info-bar-bottom {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
             z-index: 1000; background: rgba(255,255,255,0.9); padding: 8px 20px;
             border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             font-size: 13px; color: #555; text-align: center; white-space: nowrap;
+        }
+        .info-bar-bottom kbd {
+            background: #eee; padding: 2px 6px; border-radius: 3px;
+            border: 1px solid #ccc; font-size: 12px;
+        }
+        .basemap-picker {
+            display: flex; justify-content: center; gap: 12px;
+            margin-top: 6px; font-size: 12px; font-weight: 600; color: #333;
+        }
+        .basemap-picker label {
+            display: flex; align-items: center; gap: 6px; cursor: pointer;
         }
         .info-bar kbd {
             background: #eee; padding: 2px 6px; border-radius: 3px;
@@ -110,11 +141,13 @@
         .point-left { color: #b5179e; }
         .point-right { color: #0077b6; }
         .point-loading { color: #999; font-style: italic; }
+        .point-chart { width: 280px; height: 160px; margin-top: 8px; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="swipe-bar"><div id="swipe-handle">&#x2B0C;</div></div>
+
 
     <div class="panel panel-left">
         <span class="panel-label">Left</span>
@@ -151,6 +184,21 @@
     </div>
 
     <div class="info-bar">
+        <span class="info-opacity">
+            <span style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555;">Overlay Opacity</span>
+            <span class="opacity-row">
+                <input type="range" id="opacity-slider" min="0" max="100" value="85" step="1">
+                <span id="opacity-val">85%</span>
+            </span>
+        </span>
+        <span style="font-size: 18px; font-weight: 800; text-align: center; line-height: 1; color: #555; margin-top: 8px;">Basemap</span>
+        <div class="basemap-picker">
+            <label><input type="radio" name="basemap" value="map" checked> Street Map</label>
+            <label><input type="radio" name="basemap" value="satellite"> Satellite</label>
+        </div>
+    </div>
+
+    <div class="info-bar-bottom">
         Click map for values &bull; Drag handle to compare &bull;
         <kbd>&larr;</kbd><kbd>&rarr;</kbd> left year &bull;
         <kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> right year
@@ -166,6 +214,43 @@
             bgc: { label: 'BGC', unit: 'Mg C/ha', max: 75 },
         };
 
+        const VALID_VARS = ['agb', 'agc', 'bgc'];
+
+        // Parse URL hash parameters
+        function parseHash() {
+            const params = {};
+            const hash = window.location.hash.replace(/^#/, '');
+            if (!hash) return params;
+            hash.split('&').forEach(part => {
+                const [k, v] = part.split('=');
+                if (k && v !== undefined) params[decodeURIComponent(k)] = decodeURIComponent(v);
+            });
+            return params;
+        }
+
+        function updateHash() {
+            const center = map.getCenter();
+            const parts = [
+                `lat=${center.lat.toFixed(4)}`,
+                `lon=${center.lng.toFixed(4)}`,
+                `z=${map.getZoom()}`,
+                `lv=${leftVar}`,
+                `ly=${leftYear}`,
+                `rv=${rightVar}`,
+                `ry=${rightYear}`,
+                `o=${Math.round(layerOpacity * 100)}`,
+                `base=${currentBasemap === basemapSatellite ? 'satellite' : 'map'}`,
+            ];
+            history.replaceState(null, '', '#' + parts.join('&'));
+        }
+
+        // Read initial state from hash (with defaults)
+        const h = parseHash();
+        const initLat = parseFloat(h.lat) || 42.8;
+        const initLon = parseFloat(h.lon) || -75.5;
+        const initZoom = parseInt(h.z) || 7;
+        const initBase = h.base || 'map';
+
         function tileUrl(variable, year) {
             return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
                 + `?variable=${variable}&time=${year}&colormap_name=viridis`;
@@ -176,19 +261,60 @@
         }
 
         // Initialize map
-        const map = L.map('map', { zoomControl: false }).setView([42.8, -75.5], 7);
+        const map = L.map('map', { zoomControl: false }).setView([initLat, initLon], initZoom);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            maxZoom: 19
-        }).addTo(map);
+        const basemapStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google',
+            maxZoom: 20
+        });
+        const basemapSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google',
+            maxZoom: 20
+        });
+        let currentBasemap;
+        if (initBase === 'satellite') {
+            basemapSatellite.addTo(map);
+            currentBasemap = basemapSatellite;
+            document.querySelector('input[name="basemap"][value="satellite"]').checked = true;
+        } else {
+            basemapStreets.addTo(map);
+            currentBasemap = basemapStreets;
+        }
 
-        // State
-        let leftVar = 'agb', leftYear = 1990;
-        let rightVar = 'agb', rightYear = 2023;
+        document.querySelectorAll('input[name="basemap"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.value === 'satellite') {
+                    if (currentBasemap === basemapStreets) map.removeLayer(basemapStreets);
+                    basemapSatellite.addTo(map);
+                    basemapSatellite.bringToBack();
+                    currentBasemap = basemapSatellite;
+                } else {
+                    if (currentBasemap === basemapSatellite) map.removeLayer(basemapSatellite);
+                    basemapStreets.addTo(map);
+                    basemapStreets.bringToBack();
+                    currentBasemap = basemapStreets;
+                }
+                updateHash();
+            });
+        });
+
+        // State (initialized from hash or defaults)
+        let leftVar = VALID_VARS.includes(h.lv) ? h.lv : 'agb';
+        let leftYear = (parseInt(h.ly) >= 1990 && parseInt(h.ly) <= 2023) ? parseInt(h.ly) : 1990;
+        let rightVar = VALID_VARS.includes(h.rv) ? h.rv : 'agb';
+        let rightYear = (parseInt(h.ry) >= 1990 && parseInt(h.ry) <= 2023) ? parseInt(h.ry) : 2023;
+        let layerOpacity = (parseInt(h.o) >= 0 && parseInt(h.o) <= 100) ? parseInt(h.o) / 100 : 0.85;
         let leftLayer = null, rightLayer = null;
         let swipeX = window.innerWidth / 2;
+
+        // Sync UI controls to initial state from hash
+        document.getElementById('var-left').value = leftVar;
+        document.getElementById('var-right').value = rightVar;
+        document.getElementById('slider-left').value = leftYear;
+        document.getElementById('slider-right').value = rightYear;
+        document.getElementById('opacity-slider').value = Math.round(layerOpacity * 100);
+        document.getElementById('opacity-val').textContent = Math.round(layerOpacity * 100) + '%';
 
         // Colorbar
         function updateColorbar() {
@@ -241,11 +367,11 @@
             if (rightLayer) map.removeLayer(rightLayer);
 
             leftLayer = L.tileLayer(tileUrl(leftVar, leftYear), {
-                opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
+                opacity: layerOpacity, attribution: 'ESF / Frontier Geospatial'
             }).addTo(map);
 
             rightLayer = L.tileLayer(tileUrl(rightVar, rightYear), {
-                opacity: 0.85, attribution: 'ESF / Frontier Geospatial'
+                opacity: layerOpacity, attribution: 'ESF / Frontier Geospatial'
             }).addTo(map);
 
             leftLayer.on('load tileload', clipLeft);
@@ -256,6 +382,7 @@
             document.getElementById('year-right').textContent = rightYear;
 
             updateColorbar();
+            updateHash();
         }
 
         // Swipe bar dragging
@@ -288,21 +415,28 @@
 
         // Re-clip on map move/zoom and window resize
         map.on('move zoom moveend zoomend', updateClip);
+        map.on('moveend zoomend', updateHash);
         window.addEventListener('resize', () => {
             swipeX = Math.max(0, Math.min(window.innerWidth, swipeX));
             updateClip();
         });
 
         // Point query on click
+        let pointChart = null;
         map.on('click', async (e) => {
             const { lng, lat } = e.latlng;
+            const minYear = Math.min(leftYear, rightYear);
+            const maxYear = Math.max(leftYear, rightYear);
+            const years = [];
+            for (let y = minYear; y <= maxYear; y++) years.push(y);
 
-            const popup = L.popup()
+            const popup = L.popup({ maxWidth: 350 })
                 .setLatLng(e.latlng)
                 .setContent('<span class="point-loading">Loading values...</span>')
                 .openOn(map);
 
             try {
+                // Fetch left/right selected years immediately for the text display
                 const [leftRes, rightRes] = await Promise.all([
                     fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(leftVar, leftYear))}`).then(r => r.json()),
                     fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(rightVar, rightYear))}`).then(r => r.json()),
@@ -312,25 +446,151 @@
                 const rightVal = rightRes.values?.[0];
                 const vl = VAR_INFO[leftVar], vr = VAR_INFO[rightVar];
 
-                function fmt(val, nodata) {
-                    if (val === null || val === undefined || val === nodata || val === -9999) return 'No data';
+                function fmt(val) {
+                    if (val === null || val === undefined || val === -9999) return 'No data';
                     return val.toFixed(1);
+                }
+                function isValid(val) {
+                    return val !== null && val !== undefined && val !== -9999;
                 }
 
                 let html = '';
                 html += `<div class="point-row"><span class="point-label point-left">${vl.label} ${leftYear} (Left):</span><br>`;
-                html += `<span class="point-val point-left">${fmt(leftVal)} ${leftVal !== -9999 && leftVal !== null ? vl.unit : ''}</span></div>`;
+                html += `<span class="point-val point-left">${fmt(leftVal)} ${isValid(leftVal) ? vl.unit : ''}</span></div>`;
                 html += `<div class="point-row"><span class="point-label point-right">${vr.label} ${rightYear} (Right):</span><br>`;
-                html += `<span class="point-val point-right">${fmt(rightVal)} ${rightVal !== -9999 && rightVal !== null ? vr.unit : ''}</span></div>`;
+                html += `<span class="point-val point-right">${fmt(rightVal)} ${isValid(rightVal) ? vr.unit : ''}</span></div>`;
 
-                if (leftVar === rightVar && leftVal !== -9999 && rightVal !== -9999 && leftVal !== null && rightVal !== null) {
+                if (leftVar === rightVar && isValid(leftVal) && isValid(rightVal)) {
                     const diff = rightVal - leftVal;
                     const sign = diff >= 0 ? '+' : '';
                     html += `<div class="point-row"><span class="point-label">Change:</span><br>`;
                     html += `<span class="point-val" style="color:${diff >= 0 ? '#2d6a4f' : '#d00'}">${sign}${diff.toFixed(1)} ${vl.unit}</span></div>`;
                 }
 
+                html += '<div class="point-chart"><canvas id="point-chart-canvas"></canvas></div>';
                 popup.setContent(html);
+
+                // Fetch all years for time series chart
+                const sameVar = leftVar === rightVar;
+                const varsToFetch = sameVar ? [leftVar] : [leftVar, rightVar];
+                const seriesData = {};
+                for (const v of varsToFetch) {
+                    const results = await Promise.all(
+                        years.map(y =>
+                            fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(v, y))}`)
+                                .then(r => r.json())
+                                .then(d => d.values?.[0])
+                                .catch(() => null)
+                        )
+                    );
+                    seriesData[v] = results.map(val => isValid(val) ? val : null);
+                }
+
+                // Check popup is still open
+                const canvas = document.getElementById('point-chart-canvas');
+                if (!canvas) return;
+
+                if (pointChart) { pointChart.destroy(); pointChart = null; }
+
+                const datasets = [];
+                if (sameVar) {
+                    datasets.push({
+                        label: `${vl.label} (${vl.unit})`,
+                        data: seriesData[leftVar],
+                        borderColor: '#b5179e',
+                        backgroundColor: '#b5179e',
+                        borderWidth: 1.5,
+                        pointRadius: 2,
+                        tension: 0,
+                        spanGaps: true,
+                    });
+                } else {
+                    datasets.push({
+                        label: `${vl.label} (${vl.unit})`,
+                        data: seriesData[leftVar],
+                        borderColor: '#b5179e',
+                        backgroundColor: '#b5179e',
+                        borderWidth: 1.5,
+                        pointRadius: 2,
+                        tension: 0,
+                        spanGaps: true,
+                    });
+                    datasets.push({
+                        label: `${vr.label} (${vr.unit})`,
+                        data: seriesData[rightVar],
+                        borderColor: '#0077b6',
+                        backgroundColor: '#0077b6',
+                        borderWidth: 1.5,
+                        pointRadius: 2,
+                        tension: 0,
+                        spanGaps: true,
+                    });
+                }
+
+                // Add marker points for selected years
+                const leftIdx = leftYear - minYear;
+                const rightIdx = rightYear - minYear;
+                const markerData = sameVar ? seriesData[leftVar] : seriesData[leftVar];
+                const leftMarkerVal = markerData[leftIdx];
+                const rightMarkerVal = sameVar ? markerData[rightIdx] : seriesData[rightVar][rightIdx];
+
+                const markerLeft = new Array(years.length).fill(null);
+                if (leftMarkerVal !== null) markerLeft[leftIdx] = leftMarkerVal;
+                datasets.push({
+                    label: 'Left year',
+                    data: markerLeft,
+                    borderColor: '#b5179e',
+                    backgroundColor: '#b5179e',
+                    pointRadius: 5,
+                    pointStyle: 'circle',
+                    showLine: false,
+                });
+
+                const markerRight = new Array(years.length).fill(null);
+                if (rightMarkerVal !== null) markerRight[rightIdx] = rightMarkerVal;
+                datasets.push({
+                    label: 'Right year',
+                    data: markerRight,
+                    borderColor: '#0077b6',
+                    backgroundColor: '#0077b6',
+                    pointRadius: 5,
+                    pointStyle: 'circle',
+                    showLine: false,
+                });
+
+                pointChart = new Chart(canvas, {
+                    type: 'line',
+                    data: { labels: years, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: !sameVar,
+                                labels: { boxWidth: 10, font: { size: 10 }, filter: (item) => !item.text.includes('year') },
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) : 'No data'}`,
+                                },
+                            },
+                        },
+                        scales: {
+                            x: {
+                                ticks: { font: { size: 9 }, maxTicksLimit: 6 },
+                                grid: { display: false },
+                            },
+                            y: {
+                                beginAtZero: true,
+                                ticks: { font: { size: 9 }, maxTicksLimit: 5 },
+                                grid: { color: '#eee' },
+                            },
+                        },
+                        interaction: { mode: 'nearest', intersect: true },
+                        animation: { duration: 0 },
+                    },
+                });
+
             } catch (err) {
                 popup.setContent('<span class="point-loading">Error fetching values</span>');
             }
@@ -354,6 +614,15 @@
         document.getElementById('slider-right').addEventListener('input', (e) => {
             rightYear = parseInt(e.target.value);
             updateLayers();
+        });
+
+        // Opacity control
+        document.getElementById('opacity-slider').addEventListener('input', (e) => {
+            layerOpacity = parseInt(e.target.value) / 100;
+            document.getElementById('opacity-val').textContent = e.target.value + '%';
+            if (leftLayer) leftLayer.setOpacity(layerOpacity);
+            if (rightLayer) rightLayer.setOpacity(layerOpacity);
+            updateHash();
         });
 
         // Keyboard shortcuts
