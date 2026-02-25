@@ -394,7 +394,7 @@
         // ── Data fetching ──────────────────────────────────────────────────────
 
         async function fetchOneYear(variable, year, geometry) {
-            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(variable, year))}`;
+            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(variable, year))}&max_size=512`;
             const body = JSON.stringify({ type: 'Feature', geometry, properties: {} });
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
             const data = await res.json();
