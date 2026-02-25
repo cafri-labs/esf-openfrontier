@@ -491,7 +491,7 @@
                 const wrapper = statsArea.querySelector('.chart-section');
                 if (wrapper) {
                     wrapper.innerHTML = '<div class="section-title">Mean ± Std Dev over time</div><div style="height:180px"></div>';
-                    wrapper.querySelector('div').appendChild(canvas);
+                    wrapper.querySelectorAll('div')[1].appendChild(canvas);
                     renderChart(tsData.means, tsData.stds);
                 }
             } else {
