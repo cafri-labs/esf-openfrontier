@@ -6,6 +6,7 @@
     <title>ESF OpenFrontier - NY County Statistics</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; }
@@ -13,7 +14,7 @@
         #map { flex: 1; }
 
         #sidebar {
-            width: 300px; min-width: 300px; height: 100vh; overflow-y: auto;
+            width: 320px; min-width: 320px; height: 100vh; overflow-y: auto;
             background: #f8f9fa; border-left: 1px solid #dee2e6;
             display: flex; flex-direction: column;
         }
@@ -44,7 +45,7 @@
         #year-slider { flex: 1; accent-color: #2d6a4f; cursor: pointer; }
         #year-display { font-size: 18px; font-weight: 800; color: #2d6a4f; min-width: 44px; text-align: right; }
 
-        .stats-area { flex: 1; padding: 14px; }
+        .stats-area { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
 
         .prompt {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -53,12 +54,10 @@
         .prompt svg { opacity: 0.3; }
         .prompt p { font-size: 13px; }
 
-        .county-name {
-            font-size: 20px; font-weight: 800; color: #1a1a1a; margin-bottom: 2px;
-        }
-        .county-sub { font-size: 12px; color: #888; margin-bottom: 16px; }
+        .county-name { font-size: 20px; font-weight: 800; color: #1a1a1a; margin-bottom: 2px; }
+        .county-sub { font-size: 12px; color: #888; margin-bottom: 12px; }
 
-        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .stat-card {
             background: white; border-radius: 8px; padding: 10px 12px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.08);
@@ -73,9 +72,9 @@
         .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
         .stat-card.highlight .stat-label { color: rgba(255,255,255,0.75); }
 
-        .histogram-section { margin-top: 12px; }
-        .histogram-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 8px; }
-        .histogram { display: flex; align-items: flex-end; gap: 2px; height: 70px; }
+        .histogram-section { }
+        .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 8px; }
+        .histogram { display: flex; align-items: flex-end; gap: 2px; height: 60px; }
         .hist-bar {
             flex: 1; background: #2d6a4f; border-radius: 2px 2px 0 0;
             transition: background 0.15s; min-height: 2px; cursor: default;
@@ -83,14 +82,17 @@
         .hist-bar:hover { background: #1b4332; }
         .hist-axis { display: flex; justify-content: space-between; font-size: 10px; color: #aaa; margin-top: 3px; }
 
+        .chart-section { background: white; border-radius: 8px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        .chart-section canvas { display: block; }
+
         .loading {
             display: flex; align-items: center; gap: 8px;
-            color: #666; font-size: 13px; padding: 20px 0;
+            color: #666; font-size: 13px; padding: 8px 0;
         }
         .spinner {
-            width: 18px; height: 18px; border: 2px solid #ddd;
+            width: 16px; height: 16px; border: 2px solid #ddd;
             border-top-color: #2d6a4f; border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.8s linear infinite; flex-shrink: 0;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -157,7 +159,7 @@
         </div>
 
         <div class="stats-area" id="stats-area">
-            <div class="prompt" id="prompt">
+            <div class="prompt">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path d="M3 6l9-3 9 3v12l-9 3-9-3V6z"/>
                     <path d="M12 3v18M3 6l9 3 9-3"/>
@@ -170,6 +172,7 @@
     <script>
         const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
         const COUNTIES_URL = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/new-york-counties.geojson';
+        const YEARS = Array.from({length: 34}, (_, i) => 1990 + i);  // 1990..2023
 
         const VAR_INFO = {
             agb: { label: 'AGB', fullLabel: 'Aboveground Biomass', unit: 'Mg/ha', max: 250 },
@@ -180,12 +183,16 @@
         let currentVar = 'agb';
         let currentYear = 2023;
         let selectedLayer = null;
+        let selectedFeature = null;
         let countiesGeoJSON = null;
         let tileLayer = null;
 
+        // Cache: { 'agb': { means, stds }, 'agc': {...}, ... } per selected county
+        let tsCache = {};
+        let tsChart = null;
+
         // Map
         const map = L.map('map').setView([42.9, -76.0], 7);
-
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
         }).addTo(map);
@@ -193,7 +200,6 @@
         function cogUrl(variable, year) {
             return `s3://osc/esf-${variable}/${variable}_${year}_cog.tif`;
         }
-
         function tileUrl(variable, year) {
             return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png?variable=${variable}&time=${year}&colormap_name=viridis`;
         }
@@ -202,9 +208,7 @@
             if (tileLayer) map.removeLayer(tileLayer);
             tileLayer = L.tileLayer(tileUrl(currentVar, currentYear), {
                 opacity: 0.75, attribution: 'ESF / Frontier Geospatial'
-            });
-            tileLayer.addTo(map);
-            // Keep counties on top
+            }).addTo(map);
             if (countiesGeoJSON) countiesGeoJSON.bringToFront();
         }
 
@@ -215,96 +219,292 @@
             document.getElementById('cb-mid').textContent = Math.round(v.max / 2);
         }
 
-        // County styles
-        const defaultStyle = { color: '#555', weight: 1, fillOpacity: 0, fillColor: '#2d6a4f' };
-        const hoverStyle   = { color: '#2d6a4f', weight: 2, fillOpacity: 0.15 };
-        const selectedStyle = { color: '#b5179e', weight: 3, fillOpacity: 0.1 };
+        // ── Rendering ─────────────────────────────────────────────────────────
 
-        function renderStats(feature, stats) {
+        function renderStatCards(name, stats) {
             const s = stats;
             const v = VAR_INFO[currentVar];
             const bins = s.histogram[0];
             const edges = s.histogram[1];
             const maxBin = Math.max(...bins);
-            const name = feature.properties.name;
 
             const histBars = bins.map((count, i) => {
                 const pct = Math.round((count / maxBin) * 100);
-                const lo = edges[i].toFixed(0);
-                const hi = edges[i+1].toFixed(0);
+                const lo = edges[i].toFixed(0), hi = edges[i+1].toFixed(0);
                 return `<div class="hist-bar" style="height:${Math.max(pct,2)}%" title="${lo}–${hi} ${v.unit}: ${count.toLocaleString()} px"></div>`;
             }).join('');
 
-            const histMin = edges[0].toFixed(0);
-            const histMax = edges[edges.length-1].toFixed(0);
-
-            document.getElementById('stats-area').innerHTML = `
-                <div class="county-name">${name}</div>
-                <div class="county-sub">${v.fullLabel} &bull; ${currentYear}</div>
-
-                <div class="stat-grid">
+            return `
+                <div>
+                  <div class="county-name">${name}</div>
+                  <div class="county-sub">${v.fullLabel} &bull; ${currentYear}</div>
+                  <div class="stat-grid">
                     <div class="stat-card highlight">
-                        <div class="stat-value">${s.mean.toFixed(1)} <span class="stat-unit">${v.unit}</span></div>
-                        <div class="stat-label">County Mean</div>
+                      <div class="stat-value">${s.mean.toFixed(1)} <span class="stat-unit">${v.unit}</span></div>
+                      <div class="stat-label">County Mean</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.min.toFixed(1)}</div>
-                        <div class="stat-label">Min (${v.unit})</div>
+                      <div class="stat-value">${s.min.toFixed(1)}</div>
+                      <div class="stat-label">Min (${v.unit})</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.max.toFixed(1)}</div>
-                        <div class="stat-label">Max (${v.unit})</div>
+                      <div class="stat-value">${s.max.toFixed(1)}</div>
+                      <div class="stat-label">Max (${v.unit})</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.std.toFixed(1)}</div>
-                        <div class="stat-label">Std Dev</div>
+                      <div class="stat-value">${s.std.toFixed(1)}</div>
+                      <div class="stat-label">Std Dev</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.median.toFixed(1)}</div>
-                        <div class="stat-label">Median</div>
+                      <div class="stat-value">${s.median.toFixed(1)}</div>
+                      <div class="stat-label">Median</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.percentile_2.toFixed(1)}</div>
-                        <div class="stat-label">P2 (${v.unit})</div>
+                      <div class="stat-value">${s.percentile_2.toFixed(1)}</div>
+                      <div class="stat-label">P2 (${v.unit})</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${s.percentile_98.toFixed(1)}</div>
-                        <div class="stat-label">P98 (${v.unit})</div>
+                      <div class="stat-value">${s.percentile_98.toFixed(1)}</div>
+                      <div class="stat-label">P98 (${v.unit})</div>
                     </div>
+                  </div>
                 </div>
-
                 <div class="histogram-section">
-                    <div class="histogram-title">Distribution</div>
-                    <div class="histogram">${histBars}</div>
-                    <div class="hist-axis"><span>${histMin}</span><span>${histMax} ${v.unit}</span></div>
+                  <div class="section-title">Distribution (${currentYear})</div>
+                  <div class="histogram">${histBars}</div>
+                  <div class="hist-axis"><span>${edges[0].toFixed(0)}</span><span>${edges[edges.length-1].toFixed(0)} ${v.unit}</span></div>
                 </div>
             `;
         }
 
-        async function fetchStats(layer, feature) {
+        function renderChart(means, stds) {
+            const v = VAR_INFO[currentVar];
+            const yearIdx = currentYear - 1990;
+
+            // Build selected-year marker dataset
+            const marker = new Array(34).fill(null);
+            marker[yearIdx] = means[yearIdx];
+
+            const upper = means.map((m, i) => m !== null ? m + stds[i] : null);
+            const lower = means.map((m, i) => m !== null ? Math.max(0, m - stds[i]) : null);
+
+            if (tsChart) { tsChart.destroy(); tsChart = null; }
+
+            const canvas = document.getElementById('ts-canvas');
+            if (!canvas) return;
+
+            tsChart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: YEARS,
+                    datasets: [
+                        {
+                            // Upper std bound — invisible line, fills down to lower
+                            label: 'upper',
+                            data: upper,
+                            borderColor: 'transparent',
+                            backgroundColor: 'rgba(45,106,79,0.15)',
+                            pointRadius: 0,
+                            fill: '+1',   // fill toward next dataset (lower)
+                            tension: 0.3,
+                        },
+                        {
+                            // Lower std bound
+                            label: 'lower',
+                            data: lower,
+                            borderColor: 'transparent',
+                            backgroundColor: 'transparent',
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3,
+                        },
+                        {
+                            // Mean line
+                            label: `Mean (${v.unit})`,
+                            data: means,
+                            borderColor: '#2d6a4f',
+                            backgroundColor: '#2d6a4f',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            fill: false,
+                            tension: 0.3,
+                            spanGaps: true,
+                        },
+                        {
+                            // Selected year marker
+                            label: 'Selected year',
+                            data: marker,
+                            borderColor: '#b5179e',
+                            backgroundColor: '#b5179e',
+                            pointRadius: 6,
+                            pointHoverRadius: 7,
+                            showLine: false,
+                        },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                filter: item => !['upper', 'lower', 'Selected year'].includes(item.text),
+                                boxWidth: 12, font: { size: 10 },
+                            }
+                        },
+                        tooltip: {
+                            filter: item => item.dataset.label !== 'upper' && item.dataset.label !== 'lower',
+                            callbacks: {
+                                label: ctx => {
+                                    if (ctx.dataset.label === 'Selected year') return `${currentYear}: ${ctx.parsed.y?.toFixed(1)} ${v.unit}`;
+                                    return `Mean: ${ctx.parsed.y?.toFixed(1)} ±${stds[ctx.dataIndex]?.toFixed(1)} ${v.unit}`;
+                                }
+                            }
+                        },
+                    },
+                    scales: {
+                        x: {
+                            ticks: { font: { size: 9 }, maxTicksLimit: 8 },
+                            grid: { display: false },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { font: { size: 9 }, maxTicksLimit: 5 },
+                            grid: { color: '#f0f0f0' },
+                            title: { display: true, text: v.unit, font: { size: 9 }, color: '#666' },
+                        },
+                    },
+                    animation: { duration: 300 },
+                }
+            });
+        }
+
+        function updateChartMarker() {
+            if (!tsChart) return;
+            const yearIdx = currentYear - 1990;
+            const means = tsChart.data.datasets[2].data;  // mean dataset
+            const marker = new Array(34).fill(null);
+            if (means[yearIdx] !== null) marker[yearIdx] = means[yearIdx];
+            tsChart.data.datasets[3].data = marker;
+            tsChart.update('none');
+        }
+
+        // ── Data fetching ──────────────────────────────────────────────────────
+
+        async function fetchOneYear(variable, year, geometry) {
+            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(variable, year))}`;
+            const body = JSON.stringify({ type: 'Feature', geometry, properties: {} });
+            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+            const data = await res.json();
+            return data.properties?.statistics?.b1 ?? null;
+        }
+
+        async function fetchCurrentStats(feature) {
+            const name = feature.properties.name;
+            const stats = await fetchOneYear(currentVar, currentYear, feature.geometry);
+            if (!stats) throw new Error('No statistics in response');
+            return { name, stats };
+        }
+
+        async function fetchTimeSeries(feature) {
+            if (tsCache[currentVar]) return tsCache[currentVar];  // already cached
+
+            const results = await Promise.all(
+                YEARS.map(y => fetchOneYear(currentVar, y, feature.geometry).catch(() => null))
+            );
+            const means = results.map(s => s?.mean ?? null);
+            const stds  = results.map(s => s?.std  ?? null);
+            tsCache[currentVar] = { means, stds };
+            return tsCache[currentVar];
+        }
+
+        async function loadCounty(feature) {
+            const name = feature.properties.name;
+
+            // Show loading state with placeholders for both sections
             document.getElementById('stats-area').innerHTML = `
-                <div class="loading"><div class="spinner"></div> Computing statistics for ${feature.properties.name}…</div>`;
+                <div>
+                  <div class="county-name">${name}</div>
+                  <div class="county-sub loading"><div class="spinner"></div> Loading ${currentYear} statistics…</div>
+                </div>
+                <div class="chart-section">
+                  <div class="section-title">Mean over time (1990–2023)</div>
+                  <div class="loading"><div class="spinner"></div> Fetching all years…</div>
+                </div>`;
 
-            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(currentVar, currentYear))}`;
-            const body = JSON.stringify({ type: 'Feature', geometry: feature.geometry, properties: {} });
-
+            // Fetch current-year stats and full time series in parallel
             try {
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body
-                });
-                const data = await res.json();
-                const stats = data.properties?.statistics?.b1;
-                if (!stats) throw new Error('No statistics in response');
-                renderStats(feature, stats);
+                const [{ stats }, tsData] = await Promise.all([
+                    fetchCurrentStats(feature),
+                    fetchTimeSeries(feature),
+                ]);
+
+                document.getElementById('stats-area').innerHTML =
+                    renderStatCards(name, stats) +
+                    `<div class="chart-section">
+                       <div class="section-title">Mean ± Std Dev over time</div>
+                       <div style="height:180px"><canvas id="ts-canvas"></canvas></div>
+                     </div>`;
+
+                renderChart(tsData.means, tsData.stds);
             } catch (err) {
                 document.getElementById('stats-area').innerHTML =
                     `<div class="prompt"><p style="color:#c00">Error: ${err.message}</p></div>`;
             }
         }
 
-        // Load counties
+        async function refreshStats(feature) {
+            // Called when year or var changes with county already selected
+            const name = feature.properties.name;
+            const statsArea = document.getElementById('stats-area');
+
+            // Preserve chart section if it exists, just update the top part
+            const chartSection = statsArea.querySelector('.chart-section');
+
+            // Fetch stat cards for new year
+            const stats = await fetchOneYear(currentVar, currentYear, feature.geometry);
+            if (!stats) return;
+
+            const cardHtml = renderStatCards(name, stats);
+
+            if (chartSection && tsCache[currentVar]) {
+                // Replace everything above chart, then re-append chart
+                statsArea.innerHTML = cardHtml;
+                const chartDiv = document.createElement('div');
+                chartDiv.className = 'chart-section';
+                chartDiv.innerHTML = `<div class="section-title">Mean ± Std Dev over time</div>
+                    <div style="height:180px"><canvas id="ts-canvas"></canvas></div>`;
+                statsArea.appendChild(chartDiv);
+                renderChart(tsCache[currentVar].means, tsCache[currentVar].stds);
+            } else if (chartSection && !tsCache[currentVar]) {
+                // Variable changed, need new time series
+                statsArea.innerHTML = cardHtml +
+                    `<div class="chart-section">
+                       <div class="section-title">Mean ± Std Dev over time</div>
+                       <div class="loading"><div class="spinner"></div> Fetching all years…</div>
+                     </div>`;
+                const tsData = await fetchTimeSeries(feature);
+                const canvas = document.createElement('canvas');
+                canvas.id = 'ts-canvas';
+                const wrapper = statsArea.querySelector('.chart-section');
+                if (wrapper) {
+                    wrapper.innerHTML = '<div class="section-title">Mean ± Std Dev over time</div><div style="height:180px"></div>';
+                    wrapper.querySelector('div').appendChild(canvas);
+                    renderChart(tsData.means, tsData.stds);
+                }
+            } else {
+                statsArea.innerHTML = cardHtml;
+            }
+        }
+
+        // ── County layer ───────────────────────────────────────────────────────
+
+        const defaultStyle  = { color: '#555', weight: 1, fillOpacity: 0 };
+        const hoverStyle    = { color: '#2d6a4f', weight: 2, fillOpacity: 0.15 };
+        const selectedStyle = { color: '#b5179e', weight: 3, fillOpacity: 0.1 };
+
         fetch(COUNTIES_URL)
             .then(r => r.json())
             .then(geojson => {
@@ -312,29 +512,26 @@
                     style: defaultStyle,
                     onEachFeature(feature, layer) {
                         layer.on({
-                            mouseover(e) {
-                                if (layer !== selectedLayer)
-                                    layer.setStyle(hoverStyle);
-                            },
-                            mouseout(e) {
-                                if (layer !== selectedLayer)
-                                    layer.setStyle(defaultStyle);
-                            },
+                            mouseover() { if (layer !== selectedLayer) layer.setStyle(hoverStyle); },
+                            mouseout()  { if (layer !== selectedLayer) layer.setStyle(defaultStyle); },
                             click(e) {
                                 L.DomEvent.stopPropagation(e);
-                                if (selectedLayer && selectedLayer !== layer)
-                                    selectedLayer.setStyle(defaultStyle);
+                                if (selectedLayer && selectedLayer !== layer) selectedLayer.setStyle(defaultStyle);
                                 selectedLayer = layer;
+                                selectedFeature = feature;
                                 layer.setStyle(selectedStyle);
-                                fetchStats(layer, feature);
+                                tsCache = {};  // clear cache for new county
+                                if (tsChart) { tsChart.destroy(); tsChart = null; }
+                                loadCounty(feature);
                             }
                         });
-                        layer.bindTooltip(feature.properties.name, { sticky: true, className: 'county-tooltip' });
+                        layer.bindTooltip(feature.properties.name, { sticky: true });
                     }
                 }).addTo(map);
             });
 
-        // Controls
+        // ── Controls ───────────────────────────────────────────────────────────
+
         document.querySelectorAll('.var-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.var-btn').forEach(b => b.classList.remove('active'));
@@ -342,7 +539,7 @@
                 currentVar = btn.dataset.var;
                 updateColorbar();
                 updateTileLayer();
-                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+                if (selectedFeature) refreshStats(selectedFeature);
             });
         });
 
@@ -350,23 +547,27 @@
             currentYear = parseInt(e.target.value);
             document.getElementById('year-display').textContent = currentYear;
             updateTileLayer();
-            if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+            if (selectedFeature) {
+                // Just update the chart marker immediately, then refresh stat cards
+                updateChartMarker();
+                refreshStats(selectedFeature);
+            }
         });
 
-        // Keyboard shortcuts for year
         document.addEventListener('keydown', e => {
-            const slider = document.getElementById('year-slider');
             if (e.key === 'ArrowLeft' && currentYear > 1990) {
-                currentYear--; slider.value = currentYear;
+                currentYear--;
+                document.getElementById('year-slider').value = currentYear;
                 document.getElementById('year-display').textContent = currentYear;
                 updateTileLayer();
-                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+                if (selectedFeature) { updateChartMarker(); refreshStats(selectedFeature); }
             }
             if (e.key === 'ArrowRight' && currentYear < 2023) {
-                currentYear++; slider.value = currentYear;
+                currentYear++;
+                document.getElementById('year-slider').value = currentYear;
                 document.getElementById('year-display').textContent = currentYear;
                 updateTileLayer();
-                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+                if (selectedFeature) { updateChartMarker(); refreshStats(selectedFeature); }
             }
         });
 
