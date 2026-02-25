@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESF OpenFrontier - NY County Statistics</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; }
+
+        #map { flex: 1; }
+
+        #sidebar {
+            width: 300px; min-width: 300px; height: 100vh; overflow-y: auto;
+            background: #f8f9fa; border-left: 1px solid #dee2e6;
+            display: flex; flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 16px; background: #2d6a4f; color: white;
+        }
+        .sidebar-header h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+        .sidebar-header p { font-size: 12px; opacity: 0.85; }
+
+        .controls {
+            padding: 14px; background: white; border-bottom: 1px solid #dee2e6;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .control-row { display: flex; flex-direction: column; gap: 4px; }
+        .control-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
+
+        .var-buttons { display: flex; gap: 4px; }
+        .var-btn {
+            flex: 1; padding: 6px 0; border: 2px solid #ccc; border-radius: 6px;
+            background: white; cursor: pointer; font-size: 12px; font-weight: 700;
+            transition: all 0.15s;
+        }
+        .var-btn.active { background: #2d6a4f; color: white; border-color: #2d6a4f; }
+        .var-btn:hover:not(.active) { background: #e8f5ee; border-color: #2d6a4f; }
+
+        .year-row { display: flex; align-items: center; gap: 8px; }
+        #year-slider { flex: 1; accent-color: #2d6a4f; cursor: pointer; }
+        #year-display { font-size: 18px; font-weight: 800; color: #2d6a4f; min-width: 44px; text-align: right; }
+
+        .stats-area { flex: 1; padding: 14px; }
+
+        .prompt {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 200px; color: #aaa; text-align: center; gap: 12px;
+        }
+        .prompt svg { opacity: 0.3; }
+        .prompt p { font-size: 13px; }
+
+        .county-name {
+            font-size: 20px; font-weight: 800; color: #1a1a1a; margin-bottom: 2px;
+        }
+        .county-sub { font-size: 12px; color: #888; margin-bottom: 16px; }
+
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+        .stat-card {
+            background: white; border-radius: 8px; padding: 10px 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .stat-card.highlight {
+            grid-column: 1 / -1;
+            background: #2d6a4f; color: white;
+        }
+        .stat-value { font-size: 22px; font-weight: 800; line-height: 1.1; }
+        .stat-card.highlight .stat-value { font-size: 28px; }
+        .stat-unit { font-size: 11px; opacity: 0.75; }
+        .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+        .stat-card.highlight .stat-label { color: rgba(255,255,255,0.75); }
+
+        .histogram-section { margin-top: 12px; }
+        .histogram-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin-bottom: 8px; }
+        .histogram { display: flex; align-items: flex-end; gap: 2px; height: 70px; }
+        .hist-bar {
+            flex: 1; background: #2d6a4f; border-radius: 2px 2px 0 0;
+            transition: background 0.15s; min-height: 2px; cursor: default;
+        }
+        .hist-bar:hover { background: #1b4332; }
+        .hist-axis { display: flex; justify-content: space-between; font-size: 10px; color: #aaa; margin-top: 3px; }
+
+        .loading {
+            display: flex; align-items: center; gap: 8px;
+            color: #666; font-size: 13px; padding: 20px 0;
+        }
+        .spinner {
+            width: 18px; height: 18px; border: 2px solid #ddd;
+            border-top-color: #2d6a4f; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Colorbar */
+        .colorbar {
+            position: absolute; bottom: 20px; left: 20px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 10px 12px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            display: flex; align-items: stretch; gap: 8px;
+        }
+        .colorbar-gradient {
+            width: 16px; height: 140px; border-radius: 3px; border: 1px solid #ccc;
+            background: linear-gradient(to top,
+                #440154 0%, #482878 12.5%, #3e4989 25%, #31688e 37.5%,
+                #26828e 50%, #1f9e89 62.5%, #35b779 75%, #6ece58 87.5%,
+                #fde725 100%);
+        }
+        .colorbar-labels {
+            display: flex; flex-direction: column; justify-content: space-between;
+            font-size: 11px; font-weight: 600; color: #444;
+        }
+        .colorbar-title {
+            font-size: 11px; font-weight: 700; color: #333;
+            writing-mode: vertical-rl; text-orientation: mixed;
+            transform: rotate(180deg);
+        }
+    </style>
+</head>
+<body>
+    <div id="map">
+        <div class="colorbar">
+            <div class="colorbar-title" id="cb-title">AGB (Mg/ha)</div>
+            <div class="colorbar-gradient"></div>
+            <div class="colorbar-labels">
+                <span id="cb-max">250</span>
+                <span id="cb-mid">125</span>
+                <span id="cb-min">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2>NY County Carbon Statistics</h2>
+            <p>Click a county to compute area statistics</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <span class="control-label">Variable</span>
+                <div class="var-buttons">
+                    <button class="var-btn active" data-var="agb" title="Aboveground Biomass">AGB</button>
+                    <button class="var-btn" data-var="agc" title="Aboveground Carbon">AGC</button>
+                    <button class="var-btn" data-var="bgc" title="Belowground Carbon">BGC</button>
+                </div>
+            </div>
+            <div class="control-row">
+                <span class="control-label">Year</span>
+                <div class="year-row">
+                    <input type="range" id="year-slider" min="1990" max="2023" value="2023" step="1">
+                    <span id="year-display">2023</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-area" id="stats-area">
+            <div class="prompt" id="prompt">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 6l9-3 9 3v12l-9 3-9-3V6z"/>
+                    <path d="M12 3v18M3 6l9 3 9-3"/>
+                </svg>
+                <p>Click any county on the map to compute statistics for that area</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+        const COUNTIES_URL = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/new-york-counties.geojson';
+
+        const VAR_INFO = {
+            agb: { label: 'AGB', fullLabel: 'Aboveground Biomass', unit: 'Mg/ha', max: 250 },
+            agc: { label: 'AGC', fullLabel: 'Aboveground Carbon', unit: 'Mg C/ha', max: 125 },
+            bgc: { label: 'BGC', fullLabel: 'Belowground Carbon', unit: 'Mg C/ha', max: 75 },
+        };
+
+        let currentVar = 'agb';
+        let currentYear = 2023;
+        let selectedLayer = null;
+        let countiesGeoJSON = null;
+        let tileLayer = null;
+
+        // Map
+        const map = L.map('map').setView([42.9, -76.0], 7);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+        }).addTo(map);
+
+        function cogUrl(variable, year) {
+            return `s3://osc/esf-${variable}/${variable}_${year}_cog.tif`;
+        }
+
+        function tileUrl(variable, year) {
+            return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png?variable=${variable}&time=${year}&colormap_name=viridis`;
+        }
+
+        function updateTileLayer() {
+            if (tileLayer) map.removeLayer(tileLayer);
+            tileLayer = L.tileLayer(tileUrl(currentVar, currentYear), {
+                opacity: 0.75, attribution: 'ESF / Frontier Geospatial'
+            });
+            tileLayer.addTo(map);
+            // Keep counties on top
+            if (countiesGeoJSON) countiesGeoJSON.bringToFront();
+        }
+
+        function updateColorbar() {
+            const v = VAR_INFO[currentVar];
+            document.getElementById('cb-title').textContent = `${v.label} (${v.unit})`;
+            document.getElementById('cb-max').textContent = v.max;
+            document.getElementById('cb-mid').textContent = Math.round(v.max / 2);
+        }
+
+        // County styles
+        const defaultStyle = { color: '#555', weight: 1, fillOpacity: 0, fillColor: '#2d6a4f' };
+        const hoverStyle   = { color: '#2d6a4f', weight: 2, fillOpacity: 0.15 };
+        const selectedStyle = { color: '#b5179e', weight: 3, fillOpacity: 0.1 };
+
+        function renderStats(feature, stats) {
+            const s = stats;
+            const v = VAR_INFO[currentVar];
+            const bins = s.histogram[0];
+            const edges = s.histogram[1];
+            const maxBin = Math.max(...bins);
+            const name = feature.properties.name;
+
+            const histBars = bins.map((count, i) => {
+                const pct = Math.round((count / maxBin) * 100);
+                const lo = edges[i].toFixed(0);
+                const hi = edges[i+1].toFixed(0);
+                return `<div class="hist-bar" style="height:${Math.max(pct,2)}%" title="${lo}–${hi} ${v.unit}: ${count.toLocaleString()} px"></div>`;
+            }).join('');
+
+            const histMin = edges[0].toFixed(0);
+            const histMax = edges[edges.length-1].toFixed(0);
+
+            document.getElementById('stats-area').innerHTML = `
+                <div class="county-name">${name}</div>
+                <div class="county-sub">${v.fullLabel} &bull; ${currentYear}</div>
+
+                <div class="stat-grid">
+                    <div class="stat-card highlight">
+                        <div class="stat-value">${s.mean.toFixed(1)} <span class="stat-unit">${v.unit}</span></div>
+                        <div class="stat-label">County Mean</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.min.toFixed(1)}</div>
+                        <div class="stat-label">Min (${v.unit})</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.max.toFixed(1)}</div>
+                        <div class="stat-label">Max (${v.unit})</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.std.toFixed(1)}</div>
+                        <div class="stat-label">Std Dev</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.median.toFixed(1)}</div>
+                        <div class="stat-label">Median</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.percentile_2.toFixed(1)}</div>
+                        <div class="stat-label">P2 (${v.unit})</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${s.percentile_98.toFixed(1)}</div>
+                        <div class="stat-label">P98 (${v.unit})</div>
+                    </div>
+                </div>
+
+                <div class="histogram-section">
+                    <div class="histogram-title">Distribution</div>
+                    <div class="histogram">${histBars}</div>
+                    <div class="hist-axis"><span>${histMin}</span><span>${histMax} ${v.unit}</span></div>
+                </div>
+            `;
+        }
+
+        async function fetchStats(layer, feature) {
+            document.getElementById('stats-area').innerHTML = `
+                <div class="loading"><div class="spinner"></div> Computing statistics for ${feature.properties.name}…</div>`;
+
+            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(currentVar, currentYear))}`;
+            const body = JSON.stringify({ type: 'Feature', geometry: feature.geometry, properties: {} });
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body
+                });
+                const data = await res.json();
+                const stats = data.properties?.statistics?.b1;
+                if (!stats) throw new Error('No statistics in response');
+                renderStats(feature, stats);
+            } catch (err) {
+                document.getElementById('stats-area').innerHTML =
+                    `<div class="prompt"><p style="color:#c00">Error: ${err.message}</p></div>`;
+            }
+        }
+
+        // Load counties
+        fetch(COUNTIES_URL)
+            .then(r => r.json())
+            .then(geojson => {
+                countiesGeoJSON = L.geoJSON(geojson, {
+                    style: defaultStyle,
+                    onEachFeature(feature, layer) {
+                        layer.on({
+                            mouseover(e) {
+                                if (layer !== selectedLayer)
+                                    layer.setStyle(hoverStyle);
+                            },
+                            mouseout(e) {
+                                if (layer !== selectedLayer)
+                                    layer.setStyle(defaultStyle);
+                            },
+                            click(e) {
+                                L.DomEvent.stopPropagation(e);
+                                if (selectedLayer && selectedLayer !== layer)
+                                    selectedLayer.setStyle(defaultStyle);
+                                selectedLayer = layer;
+                                layer.setStyle(selectedStyle);
+                                fetchStats(layer, feature);
+                            }
+                        });
+                        layer.bindTooltip(feature.properties.name, { sticky: true, className: 'county-tooltip' });
+                    }
+                }).addTo(map);
+            });
+
+        // Controls
+        document.querySelectorAll('.var-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.var-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentVar = btn.dataset.var;
+                updateColorbar();
+                updateTileLayer();
+                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+            });
+        });
+
+        document.getElementById('year-slider').addEventListener('input', e => {
+            currentYear = parseInt(e.target.value);
+            document.getElementById('year-display').textContent = currentYear;
+            updateTileLayer();
+            if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+        });
+
+        // Keyboard shortcuts for year
+        document.addEventListener('keydown', e => {
+            const slider = document.getElementById('year-slider');
+            if (e.key === 'ArrowLeft' && currentYear > 1990) {
+                currentYear--; slider.value = currentYear;
+                document.getElementById('year-display').textContent = currentYear;
+                updateTileLayer();
+                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+            }
+            if (e.key === 'ArrowRight' && currentYear < 2023) {
+                currentYear++; slider.value = currentYear;
+                document.getElementById('year-display').textContent = currentYear;
+                updateTileLayer();
+                if (selectedLayer) fetchStats(selectedLayer, selectedLayer.feature);
+            }
+        });
+
+        updateColorbar();
+        updateTileLayer();
+    </script>
+</body>
+</html>
