@@ -818,7 +818,7 @@
 
         function updateParcelVisibility() {
             if (!parcelLayer) return;
-            const shouldShow = parcelVisible && map.getZoom() > 13;
+            const shouldShow = parcelVisible && map.getZoom() > 8;
             if (shouldShow && !map.hasLayer(parcelLayer)) {
                 parcelLayer.addTo(map);
                 parcelLayer.bringToFront();
