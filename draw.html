@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESF OpenFrontier - Draw</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+        /* Draw toolbar */
+        .draw-toolbar {
+            position: absolute; top: 12px; left: 12px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .draw-btn {
+            width: 36px; height: 36px; border-radius: 6px;
+            border: 2px solid #ccc; background: white;
+            cursor: pointer; font-size: 17px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+            transition: all 0.15s; color: #444;
+        }
+        .draw-btn:hover { background: #f0f0f0; border-color: #888; }
+        .draw-btn.active { background: #2d6a4f; color: white; border-color: #2d6a4f; }
+        .draw-btn.clear-btn:hover { background: #c0392b; color: white; border-color: #c0392b; }
+        .draw-divider {
+            width: 36px; height: 1px; background: #ddd; margin: 2px 0;
+        }
+
+        /* Status hint bar */
+        .hint-bar {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 1001; background: rgba(45,106,79,0.92); color: white;
+            padding: 7px 18px; border-radius: 20px;
+            font-size: 12px; font-weight: 600; white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            display: none;
+        }
+        .hint-bar.visible { display: block; }
+
+        /* Controls panel (top-right) */
+        .controls-panel {
+            position: absolute; top: 12px; right: 12px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 12px 14px;
+            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            display: flex; flex-direction: column; gap: 10px;
+            min-width: 210px;
+        }
+        .panel-row { display: flex; align-items: center; gap: 8px; }
+        .panel-label { font-size: 12px; font-weight: 700; color: #555; flex-shrink: 0; }
+        .variable-buttons { display: flex; gap: 4px; }
+        .variable-buttons button {
+            padding: 4px 10px; border: 2px solid #ccc; border-radius: 5px;
+            background: white; cursor: pointer; font-size: 12px; font-weight: 600;
+            transition: all 0.15s;
+        }
+        .variable-buttons button.active { background: #2d6a4f; color: white; border-color: #2d6a4f; }
+        .variable-buttons button:hover:not(.active) { background: #e8e8e8; }
+        .year-row { display: flex; align-items: center; gap: 8px; flex: 1; }
+        .year-row input[type="range"] { flex: 1; accent-color: #2d6a4f; cursor: pointer; }
+        .year-val { font-size: 17px; font-weight: 700; color: #2d6a4f; min-width: 38px; text-align: right; }
+
+        /* Colorbar */
+        .colorbar {
+            position: absolute; z-index: 1000;
+            bottom: 30px; right: 12px;
+            background: rgba(255,255,255,0.95); padding: 10px 12px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            display: flex; align-items: stretch; gap: 8px;
+        }
+        .colorbar-gradient {
+            width: 18px; height: 160px; border-radius: 3px; border: 1px solid #ccc;
+            background: linear-gradient(to top,
+                #440154 0%, #482878 12.5%, #3e4989 25%, #31688e 37.5%,
+                #26828e 50%, #1f9e89 62.5%, #35b779 75%, #6ece58 87.5%,
+                #fde725 100%);
+        }
+        .colorbar-labels {
+            display: flex; flex-direction: column; justify-content: space-between;
+            font-size: 11px; font-weight: 600; color: #444;
+        }
+        .colorbar-title {
+            font-size: 11px; font-weight: 700; color: #333;
+            writing-mode: vertical-rl; text-orientation: mixed;
+            transform: rotate(180deg);
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Drawing cursors */
+        .leaflet-container.drawing { cursor: crosshair !important; }
+
+        /* Popups */
+        .leaflet-popup-content { font-family: inherit; font-size: 13px; min-width: 230px; }
+        .point-val { font-size: 20px; font-weight: 700; color: #2d6a4f; }
+        .point-label { font-size: 11px; color: #666; }
+        .point-row { margin-bottom: 6px; }
+        .point-row:last-child { margin-bottom: 0; }
+        .point-loading { color: #999; font-style: italic; }
+        .stat-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 5px 14px; margin: 8px 0 6px;
+            padding: 8px 10px; background: #f7f7f7; border-radius: 6px;
+        }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-name { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+        .stat-value { font-size: 13px; font-weight: 700; color: #333; }
+        .area-row { font-size: 11px; color: #666; margin-bottom: 4px; }
+        .poly-chart { width: 280px; height: 160px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Draw toolbar -->
+    <div class="draw-toolbar">
+        <button class="draw-btn" id="tool-polygon" title="Polygon: click vertices, double-click to finish">&#x25B3;</button>
+        <button class="draw-btn" id="tool-freehand" title="Freehand: click and drag to draw">&#x223F;</button>
+        <button class="draw-btn" id="tool-rectangle" title="Rectangle: click and drag">&#x25AD;</button>
+        <div class="draw-divider"></div>
+        <button class="draw-btn clear-btn" id="tool-clear" title="Clear all drawings">&#x2715;</button>
+    </div>
+
+    <!-- Status hint bar -->
+    <div class="hint-bar" id="hint-bar"></div>
+
+    <!-- Controls panel -->
+    <div class="controls-panel">
+        <div class="panel-row">
+            <span class="panel-label">Variable:</span>
+            <div class="variable-buttons">
+                <button data-var="agb" class="active">AGB</button>
+                <button data-var="agc">AGC</button>
+                <button data-var="bgc">BGC</button>
+            </div>
+        </div>
+        <div class="panel-row">
+            <span class="panel-label">Year:</span>
+            <div class="year-row">
+                <input type="range" id="year-slider" min="1990" max="2023" value="2023" step="1">
+                <span class="year-val" id="year-display">2023</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Colorbar -->
+    <div class="colorbar">
+        <div class="colorbar-title" id="colorbar-title">AGB (Mg/ha)</div>
+        <div class="colorbar-gradient"></div>
+        <div class="colorbar-labels">
+            <span id="cb-max">250</span>
+            <span id="cb-mid">125</span>
+            <span id="cb-min">0</span>
+        </div>
+    </div>
+
+    <script>
+        const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+        const R2_BUCKET = 'osc';
+
+        const VAR_INFO = {
+            agb: { label: 'AGB', fullLabel: 'Aboveground Biomass', unit: 'Mg/ha', max: 250 },
+            agc: { label: 'AGC', fullLabel: 'Aboveground Carbon', unit: 'Mg C/ha', max: 125 },
+            bgc: { label: 'BGC', fullLabel: 'Belowground Carbon', unit: 'Mg C/ha', max: 75 },
+        };
+
+        const VALID_VARS = ['agb', 'agc', 'bgc'];
+
+        function parseHash() {
+            const params = {};
+            const hash = window.location.hash.replace(/^#/, '');
+            if (!hash) return params;
+            hash.split('&').forEach(part => {
+                const [k, v] = part.split('=');
+                if (k && v !== undefined) params[decodeURIComponent(k)] = decodeURIComponent(v);
+            });
+            return params;
+        }
+
+        function updateHash() {
+            const center = map.getCenter();
+            history.replaceState(null, '', '#' + [
+                `lat=${center.lat.toFixed(4)}`,
+                `lon=${center.lng.toFixed(4)}`,
+                `z=${map.getZoom()}`,
+                `var=${currentVar}`,
+                `year=${currentYear}`,
+            ].join('&'));
+        }
+
+        const h = parseHash();
+        const initLat  = parseFloat(h.lat) || 42.8;
+        const initLon  = parseFloat(h.lon) || -75.5;
+        const initZoom = parseInt(h.z)     || 7;
+
+        let currentVar  = VALID_VARS.includes(h.var) ? h.var : 'agb';
+        let currentYear = (parseInt(h.year) >= 1990 && parseInt(h.year) <= 2023) ? parseInt(h.year) : 2023;
+
+        // ── Map setup ──────────────────────────────────────────────────────────────
+        const map = L.map('map', { zoomControl: false }).setView([initLat, initLon], initZoom);
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+        }).addTo(map);
+
+        let dataLayer = null;
+
+        function tileUrl(variable, year) {
+            return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
+                + `?variable=${variable}&time=${year}&colormap_name=viridis`;
+        }
+        function cogUrl(variable, year) {
+            return `s3://${R2_BUCKET}/esf-${variable}/${variable}_${year}_cog.tif`;
+        }
+
+        function updateColorbar() {
+            const v = VAR_INFO[currentVar];
+            document.getElementById('colorbar-title').textContent = `${v.label} (${v.unit})`;
+            document.getElementById('cb-max').textContent = v.max;
+            document.getElementById('cb-mid').textContent = Math.round(v.max / 2);
+            document.getElementById('cb-min').textContent = '0';
+        }
+
+        function updateLayer() {
+            if (dataLayer) map.removeLayer(dataLayer);
+            dataLayer = L.tileLayer(tileUrl(currentVar, currentYear), {
+                opacity: 0.8, attribution: 'ESF / Frontier Geospatial'
+            }).addTo(map);
+            updateColorbar();
+            updateHash();
+        }
+
+        // Sync UI to initial state
+        document.querySelectorAll('.variable-buttons button').forEach(b =>
+            b.classList.toggle('active', b.dataset.var === currentVar));
+        document.getElementById('year-slider').value = currentYear;
+        document.getElementById('year-display').textContent = currentYear;
+
+        document.querySelectorAll('.variable-buttons button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.variable-buttons button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentVar = btn.dataset.var;
+                updateLayer();
+            });
+        });
+
+        const yearSlider = document.getElementById('year-slider');
+        yearSlider.addEventListener('input', () => {
+            currentYear = parseInt(yearSlider.value);
+            document.getElementById('year-display').textContent = currentYear;
+            updateLayer();
+        });
+
+        map.on('moveend zoomend', updateHash);
+
+        // ── Drawing state ──────────────────────────────────────────────────────────
+        let drawMode      = null;
+        let drawnLayers   = [];   // completed polygon layers
+        let tempLayer     = null; // in-progress preview layer
+        let polyVertices  = [];   // polygon mode: accumulated vertices
+        let clickTimeout  = null; // debounce single-click vs dblclick
+        let freehandOn    = false;
+        let freehandPts   = [];
+        let rectStart     = null;
+
+        const HINTS = {
+            polygon:   'Click to add vertices \u2022 Double-click to finish \u2022 Esc to cancel',
+            freehand:  'Click and drag to draw freehand \u2022 Esc to cancel',
+            rectangle: 'Click and drag to draw rectangle \u2022 Esc to cancel',
+        };
+
+        function setHint(mode) {
+            const bar = document.getElementById('hint-bar');
+            if (mode && HINTS[mode]) {
+                bar.textContent = HINTS[mode];
+                bar.classList.add('visible');
+            } else {
+                bar.classList.remove('visible');
+            }
+        }
+
+        function cancelDrawing() {
+            if (clickTimeout) { clearTimeout(clickTimeout); clickTimeout = null; }
+            if (tempLayer)    { map.removeLayer(tempLayer); tempLayer = null; }
+            polyVertices = [];
+            freehandOn   = false;
+            freehandPts  = [];
+            rectStart    = null;
+        }
+
+        function setDrawMode(mode) {
+            cancelDrawing();
+            drawMode = mode;
+
+            document.querySelectorAll('.draw-btn:not(.clear-btn)').forEach(b => b.classList.remove('active'));
+            if (mode) {
+                document.getElementById(`tool-${mode}`).classList.add('active');
+                map.getContainer().classList.add('drawing');
+                map.dragging.disable();
+                map.doubleClickZoom.disable();
+            } else {
+                map.getContainer().classList.remove('drawing');
+                map.dragging.enable();
+                map.doubleClickZoom.enable();
+            }
+            setHint(mode);
+        }
+
+        // ── Geometry helpers ───────────────────────────────────────────────────────
+
+        // Simplify an array of LatLng using Leaflet's Douglas-Peucker in pixel space
+        function simplifyLatLngs(latLngs, pixelTolerance) {
+            const pts = latLngs.map(ll => map.latLngToContainerPoint(ll));
+            const simplified = L.LineUtil.simplify(pts, pixelTolerance);
+            return simplified.map(p => map.containerPointToLatLng(p));
+        }
+
+        // Approximate polygon area in hectares (spherical excess)
+        function polyAreaHa(latLngs) {
+            const R = 6371000;
+            const n = latLngs.length;
+            let area = 0;
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                const dLon = (latLngs[j].lng - latLngs[i].lng) * Math.PI / 180;
+                const lat1 = latLngs[i].lat * Math.PI / 180;
+                const lat2 = latLngs[j].lat * Math.PI / 180;
+                area += dLon * (2 + Math.sin(lat1) + Math.sin(lat2));
+            }
+            return Math.abs(area) * R * R / 2 / 10000;
+        }
+
+        function polyCentroid(latLngs) {
+            let lat = 0, lng = 0;
+            latLngs.forEach(ll => { lat += ll.lat; lng += ll.lng; });
+            return L.latLng(lat / latLngs.length, lng / latLngs.length);
+        }
+
+        // Ray-casting point-in-polygon test
+        function pointInPolygon([x, y], ring) {
+            let inside = false;
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                const [xi, yi] = ring[i], [xj, yj] = ring[j];
+                if (((yi > y) !== (yj > y)) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
+        // Generate sample points from a regular grid clipped to the polygon interior
+        function samplePolygon(latLngs, maxN = 12) {
+            const ring = latLngs.map(ll => [ll.lng, ll.lat]);
+            const lngs = ring.map(c => c[0]), lats = ring.map(c => c[1]);
+            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+
+            const steps = 5; // (steps+1)² = 36 candidates
+            const pts = [];
+            for (let i = 0; i <= steps; i++) {
+                for (let j = 0; j <= steps; j++) {
+                    const p = [
+                        minLng + (i / steps) * (maxLng - minLng),
+                        minLat + (j / steps) * (maxLat - minLat),
+                    ];
+                    if (pointInPolygon(p, ring)) pts.push(p);
+                }
+            }
+            // Always fall back to centroid if nothing landed inside
+            if (pts.length === 0) {
+                pts.push([
+                    lngs.reduce((a, b) => a + b) / lngs.length,
+                    lats.reduce((a, b) => a + b) / lats.length,
+                ]);
+            }
+            return pts.slice(0, maxN);
+        }
+
+        // ── Polygon drawing mode ───────────────────────────────────────────────────
+
+        // Live preview as mouse moves
+        map.on('mousemove', (e) => {
+            if (drawMode !== 'polygon' || polyVertices.length < 1) return;
+            if (tempLayer) map.removeLayer(tempLayer);
+            tempLayer = L.polyline([...polyVertices, e.latlng], {
+                color: '#2d6a4f', weight: 2, dashArray: '6 4'
+            }).addTo(map);
+        });
+
+        // Click: add vertex (with dblclick debounce)
+        map.on('click', (e) => {
+            if (drawMode !== 'polygon') return;
+            if (clickTimeout) return; // suppress second click of dblclick
+            clickTimeout = setTimeout(() => {
+                clickTimeout = null;
+                polyVertices.push(e.latlng);
+                if (tempLayer) map.removeLayer(tempLayer);
+                if (polyVertices.length >= 2) {
+                    tempLayer = L.polyline(polyVertices, {
+                        color: '#2d6a4f', weight: 2, dashArray: '6 4'
+                    }).addTo(map);
+                }
+            }, 220);
+        });
+
+        // Double-click: finish polygon
+        map.on('dblclick', (e) => {
+            if (drawMode !== 'polygon') return;
+            L.DomEvent.stopPropagation(e);
+            if (clickTimeout) { clearTimeout(clickTimeout); clickTimeout = null; }
+            if (polyVertices.length < 3) { cancelDrawing(); return; }
+            const verts = [...polyVertices];
+            cancelDrawing();
+            addPolygonToMap(verts);
+            setDrawMode(null);
+        });
+
+        // ── Freehand & rectangle: use document-level pointer events ───────────────
+
+        const mapEl = map.getContainer();
+
+        mapEl.addEventListener('mousedown', (e) => {
+            if (drawMode === 'freehand') {
+                e.preventDefault();
+                freehandOn  = true;
+                freehandPts = [];
+                freehandPts.push(containerToLatLng(e));
+            } else if (drawMode === 'rectangle') {
+                e.preventDefault();
+                rectStart = containerToLatLng(e);
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (drawMode === 'freehand' && freehandOn) {
+                const ll = containerToLatLng(e);
+                freehandPts.push(ll);
+                if (tempLayer) map.removeLayer(tempLayer);
+                if (freehandPts.length >= 2) {
+                    tempLayer = L.polyline(freehandPts, { color: '#2d6a4f', weight: 2 }).addTo(map);
+                }
+            } else if (drawMode === 'rectangle' && rectStart) {
+                const ll = containerToLatLng(e);
+                if (tempLayer) map.removeLayer(tempLayer);
+                tempLayer = L.rectangle(L.latLngBounds(rectStart, ll), {
+                    color: '#2d6a4f', weight: 2, fillOpacity: 0.1
+                }).addTo(map);
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (drawMode === 'freehand' && freehandOn) {
+                freehandOn = false;
+                if (tempLayer) { map.removeLayer(tempLayer); tempLayer = null; }
+                if (freehandPts.length < 6) { cancelDrawing(); return; }
+                const simplified = simplifyLatLngs(freehandPts, 4);
+                freehandPts = [];
+                if (simplified.length >= 3) {
+                    addPolygonToMap(simplified);
+                    setDrawMode(null);
+                }
+            } else if (drawMode === 'rectangle' && rectStart) {
+                const end = containerToLatLng(e);
+                const bounds = L.latLngBounds(rectStart, end);
+                const ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
+                rectStart = null;
+                if (tempLayer) { map.removeLayer(tempLayer); tempLayer = null; }
+                // Only finish if it has some area
+                if (Math.abs(ne.lat - sw.lat) > 0.001 || Math.abs(ne.lng - sw.lng) > 0.001) {
+                    const verts = [
+                        L.latLng(ne.lat, sw.lng), L.latLng(ne.lat, ne.lng),
+                        L.latLng(sw.lat, ne.lng), L.latLng(sw.lat, sw.lng),
+                    ];
+                    addPolygonToMap(verts);
+                    setDrawMode(null);
+                }
+            }
+        });
+
+        function containerToLatLng(mouseEvent) {
+            const rect = mapEl.getBoundingClientRect();
+            return map.containerPointToLatLng(
+                L.point(mouseEvent.clientX - rect.left, mouseEvent.clientY - rect.top)
+            );
+        }
+
+        // ── Add completed polygon to map and query ─────────────────────────────────
+
+        function addPolygonToMap(latLngs) {
+            const polygon = L.polygon(latLngs, {
+                color: '#2d6a4f', weight: 2,
+                fillColor: '#2d6a4f', fillOpacity: 0.12,
+            }).addTo(map);
+            drawnLayers.push(polygon);
+
+            queryPolygon(polygon, latLngs);
+
+            polygon.on('click', (e) => {
+                if (drawMode) return;
+                L.DomEvent.stopPropagation(e);
+                queryPolygon(polygon, latLngs);
+            });
+        }
+
+        // ── Statistics query + popup ───────────────────────────────────────────────
+
+        let activeChart = null;
+
+        async function queryPolygon(polygon, latLngs) {
+            const v        = VAR_INFO[currentVar];
+            const areaHa   = polyAreaHa(latLngs);
+            const centroid = polyCentroid(latLngs);
+
+            const popup = L.popup({ maxWidth: 360, autoPan: true })
+                .setLatLng(centroid)
+                .setContent(`<span class="point-loading">Computing statistics for ${currentYear}\u2026</span>`)
+                .openOn(map);
+
+            function fmt(n) { return n != null ? Number(n).toFixed(1) : 'N/A'; }
+            function fmtInt(n) { return n != null ? Math.round(n).toLocaleString() : 'N/A'; }
+            function areaLabel(ha) {
+                return ha >= 10000 ? `${(ha / 10000).toFixed(2)} Mha`
+                     : ha >= 1000  ? `${(ha / 1000).toFixed(1)} kha`
+                     : `${ha.toFixed(1)} ha`;
+            }
+            function viridisColor(t) {
+                t = Math.max(0, Math.min(1, t));
+                if (t < 0.15) return '#440154';
+                if (t < 0.35) return '#3e4989';
+                if (t < 0.55) return '#26828e';
+                if (t < 0.75) return '#35b779';
+                return '#fde725';
+            }
+
+            try {
+                // Sample points inside polygon via GET /cog/point/ (avoids CORS preflight)
+                const pts = samplePolygon(latLngs, 36);
+                const rawVals = await Promise.all(
+                    pts.map(([lng, lat]) =>
+                        fetch(`${TITILER}/cog/point/${lng},${lat}?url=${encodeURIComponent(cogUrl(currentVar, currentYear))}`)
+                            .then(r => r.json())
+                            .then(d => d.values?.[0])
+                            .catch(() => null)
+                    )
+                );
+
+                const valid = rawVals.filter(x => x !== null && x !== undefined && x !== -9999);
+                if (valid.length === 0) throw new Error('No valid data in this area');
+
+                const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+                const min = Math.min(...valid);
+                const max = Math.max(...valid);
+                const std = Math.sqrt(valid.reduce((a, b) => a + (b - mean) ** 2, 0) / valid.length);
+
+                // Build histogram with fixed bins from 0 to v.max
+                const nBins = 10;
+                const binWidth = v.max / nBins;
+                const counts = new Array(nBins).fill(0);
+                valid.forEach(val => counts[Math.min(Math.floor(val / binWidth), nBins - 1)]++);
+                const edges = Array.from({ length: nBins + 1 }, (_, i) => i * binWidth);
+
+                let html = '';
+                html += `<div class="point-row">`;
+                html += `  <span class="point-label">${v.fullLabel} &bull; ${currentYear}</span><br>`;
+                html += `  <span class="point-val">${fmt(mean)} ${v.unit}</span>`;
+                html += `  <span class="point-label"> mean</span>`;
+                html += `</div>`;
+                html += `<div class="stat-grid">`;
+                html += `  <div class="stat-item"><span class="stat-name">Min</span><span class="stat-value">${fmt(min)}</span></div>`;
+                html += `  <div class="stat-item"><span class="stat-name">Max</span><span class="stat-value">${fmt(max)}</span></div>`;
+                html += `  <div class="stat-item"><span class="stat-name">Std Dev</span><span class="stat-value">${fmt(std)}</span></div>`;
+                html += `  <div class="stat-item"><span class="stat-name">Samples</span><span class="stat-value">${fmtInt(valid.length)}</span></div>`;
+                html += `</div>`;
+                html += `<div class="area-row">Area: ${areaLabel(areaHa)}</div>`;
+                html += `<div class="poly-chart"><canvas id="poly-chart-canvas"></canvas></div>`;
+
+                popup.setContent(html);
+
+                const canvas = document.getElementById('poly-chart-canvas');
+                if (!canvas) return;
+                if (activeChart) { activeChart.destroy(); activeChart = null; }
+
+                const binLabels = edges.slice(0, -1).map((e, i) => `${e.toFixed(0)}–${edges[i + 1].toFixed(0)}`);
+                const binColors = edges.slice(0, -1).map(e => viridisColor(e / v.max));
+
+                activeChart = new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels: binLabels,
+                        datasets: [{
+                            label: `${v.label} (${v.unit})`,
+                            data: counts,
+                            backgroundColor: binColors,
+                            borderWidth: 0,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: ctx => `${ctx[0].label} ${v.unit}`,
+                                    label: ctx => `${ctx.parsed.y.toLocaleString()} samples`,
+                                },
+                            },
+                        },
+                        scales: {
+                            x: {
+                                title: { display: true, text: v.unit, font: { size: 9 }, color: '#888' },
+                                ticks: { font: { size: 8 }, maxRotation: 45 },
+                                grid: { display: false },
+                            },
+                            y: {
+                                title: { display: true, text: 'samples', font: { size: 9 }, color: '#888' },
+                                ticks: { font: { size: 9 }, maxTicksLimit: 4 },
+                                grid: { color: '#eee' },
+                            },
+                        },
+                        animation: { duration: 0 },
+                    },
+                });
+
+            } catch (err) {
+                popup.setContent(`<span class="point-loading">Error: ${err.message}</span>`);
+            }
+        }
+
+        // ── Toolbar button handlers ────────────────────────────────────────────────
+
+        document.getElementById('tool-polygon').addEventListener('click', () =>
+            setDrawMode(drawMode === 'polygon' ? null : 'polygon'));
+        document.getElementById('tool-freehand').addEventListener('click', () =>
+            setDrawMode(drawMode === 'freehand' ? null : 'freehand'));
+        document.getElementById('tool-rectangle').addEventListener('click', () =>
+            setDrawMode(drawMode === 'rectangle' ? null : 'rectangle'));
+
+        document.getElementById('tool-clear').addEventListener('click', () => {
+            setDrawMode(null);
+            drawnLayers.forEach(l => map.removeLayer(l));
+            drawnLayers = [];
+            map.closePopup();
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') setDrawMode(null);
+        });
+
+        updateLayer();
+    </script>
+</body>
+</html>

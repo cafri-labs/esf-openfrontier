@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Greene County — Forest Carbon</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+        /* ── Sidebar ─────────────────────────────────────────────── */
+        #sidebar {
+            width: 360px; flex-shrink: 0;
+            display: flex; flex-direction: column;
+            background: #fff; border-right: 1px solid #ddd;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+            z-index: 1000; height: 100vh; overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 16px 20px; background: #2d6a4f; color: #fff; flex-shrink: 0;
+        }
+        .sidebar-header h2 { font-size: 15px; font-weight: 700; }
+        .sidebar-header p  { font-size: 11px; opacity: 0.8; margin-top: 3px; }
+
+        .sidebar-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+
+        /* Map floating controls */
+        .map-control-panel {
+            background: rgba(255,255,255,0.95); padding: 10px 14px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .basemap-picker { display: flex; gap: 10px; font-size: 12px; color: #333; }
+        .basemap-picker label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .toggle-btn {
+            padding: 4px 10px; border: 2px solid #555; border-radius: 6px;
+            background: white; cursor: pointer; font-size: 11px; font-weight: 600;
+            transition: all 0.15s; width: 100%;
+        }
+        .toggle-btn.active { background: #2d6a4f; color: white; border-color: #2d6a4f; }
+        .toggle-btn:hover:not(.active) { background: #e8e8e8; }
+
+        /* Map legend */
+        .map-legend {
+            background: rgba(255,255,255,0.95); padding: 10px 14px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .sidebar-divider { border: none; border-top: 1px solid #e8e8e8; margin: 14px 0; }
+
+        /* About section */
+        .about-section h3 { font-size: 13px; font-weight: 700; color: #2d6a4f; margin-bottom: 6px; }
+        .about-section p  { font-size: 12px; color: #555; line-height: 1.65; margin-bottom: 8px; }
+        .about-section strong { color: #2d6a4f; }
+
+        .instruction {
+            margin-top: 10px; padding: 10px 14px;
+            background: #f0f7f4; border-left: 3px solid #2d6a4f;
+            border-radius: 0 6px 6px 0;
+            font-size: 12px; color: #2d6a4f; font-weight: 600;
+        }
+
+        /* Results section */
+        #results-section { margin-top: 0; }
+
+        .parcel-class { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+        .parcel-meta  { font-size: 12px; color: #555; margin-top: 3px; }
+        .parcel-id-wrap {
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+            background: #f0f7f4; border: 1px solid #b7dfc9; border-radius: 6px;
+            padding: 5px 10px;
+        }
+        .parcel-id-label { font-size: 10px; font-weight: 700; color: #2d6a4f; text-transform: uppercase; letter-spacing: 0.05em; }
+        .parcel-id { font-family: monospace; font-size: 13px; font-weight: 700; color: #1a1a1a; }
+
+        /* Address search */
+        .search-row { display: flex; gap: 6px; margin-bottom: 14px; }
+        .search-input {
+            flex: 1; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 12px; outline: none;
+        }
+        .search-input:focus { border-color: #2d6a4f; box-shadow: 0 0 0 2px rgba(45,106,79,0.15); }
+        .search-btn {
+            padding: 7px 12px; background: #2d6a4f; color: #fff;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
+            white-space: nowrap; transition: background 0.15s;
+        }
+        .search-btn:hover { background: #1a5c38; }
+        .search-error { font-size: 11px; color: #c0392b; margin-top: -10px; margin-bottom: 8px; }
+
+        .load-btn {
+            display: block; width: 100%; margin-top: 12px;
+            padding: 9px 0; background: #2d6a4f; color: #fff;
+            border: none; border-radius: 7px; cursor: pointer;
+            font-size: 13px; font-weight: 600; text-align: center;
+            transition: background 0.15s;
+        }
+        .load-btn:hover { background: #1a5c38; }
+
+        .chart-loading { margin-top: 14px; font-size: 12px; color: #999; font-style: italic; }
+
+        .chart-wrap { margin-top: 16px; }
+
+        .stats-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px;
+        }
+        .stat-card {
+            background: #f7f9f7; border: 1px solid #e0ece5; border-radius: 8px; padding: 10px 12px;
+        }
+        .stat-label { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; }
+        .stat-value { font-size: 18px; font-weight: 700; color: #2d6a4f; margin-top: 2px; }
+        .stat-sub   { font-size: 10px; color: #888; margin-top: 1px; }
+        .stat-delta-pos { color: #2d6a4f; }
+        .stat-delta-neg { color: #c0392b; }
+
+        .legend-title { font-size: 11px; font-weight: 700; color: #444; margin-bottom: 6px; }
+        .legend-items { display: flex; flex-direction: column; gap: 4px; }
+        .legend-item  { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #444; }
+        .legend-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.15); flex-shrink: 0; }
+
+        .download-btn {
+            display: block; width: 100%; margin-top: 12px; margin-bottom: 8px;
+            padding: 7px 0; background: #fff; color: #2d6a4f;
+            border: 2px solid #2d6a4f; border-radius: 7px; cursor: pointer;
+            font-size: 12px; font-weight: 600; text-align: center;
+            transition: all 0.15s;
+        }
+        .download-btn:hover { background: #2d6a4f; color: #fff; }
+
+        /* ── Map ─────────────────────────────────────────────────── */
+        #map { flex: 1; height: 100vh; }
+
+        /* Loading indicator */
+        #loading {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 2000; background: rgba(255,255,255,0.9); padding: 6px 14px;
+            border-radius: 20px; box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+            font-size: 12px; color: #666; display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2>Forest Carbon &mdash; Greene County</h2>
+            <p>Aboveground &amp; Belowground Carbon, 1990&ndash;2023</p>
+        </div>
+        <div class="sidebar-body">
+
+            <!-- Address search -->
+            <div class="search-row">
+                <input type="text" id="address-input" class="search-input" placeholder="Search address or place&hellip;">
+                <button class="search-btn" id="search-btn">Go</button>
+            </div>
+            <div id="search-error" class="search-error" style="display:none;"></div>
+
+            <hr class="sidebar-divider">
+
+            <!-- About -->
+            <div class="about-section">
+                <h3>About This Tool</h3>
+                <p>
+                    This viewer displays annual estimates of forest carbon stored in
+                    Greene County tax parcels, derived from <strong>Landsat satellite imagery</strong>
+                    at 30&nbsp;m resolution. Data spans <strong>1990&ndash;2023</strong> and is produced
+                    by ESF and Frontier Geospatial.
+                </p>
+                <p>
+                    Two carbon pools are tracked: <strong>aboveground carbon (AGC)</strong> —
+                    carbon stored in live tree biomass above ground — and
+                    <strong>belowground carbon (BGC)</strong> — carbon stored in root systems.
+                    Values are expressed as total <strong>Mg&nbsp;C stored</strong> within each
+                    parcel boundary.
+                </p>
+                <div class="instruction">Click a parcel on the map to view its carbon history.</div>
+            </div>
+
+            <hr class="sidebar-divider" id="results-divider" style="display:none;">
+
+            <!-- Results (populated on parcel click) -->
+            <div id="results-section"></div>
+
+        </div>
+    </div>
+
+    <!-- Map -->
+    <div id="map"></div>
+    <div id="loading">Loading parcels...</div>
+
+    <script>
+        const TITILER    = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+        const R2_BUCKET  = 'osc';
+        const YEARS      = Array.from({ length: 34 }, (_, i) => 1990 + i);
+        const PIXEL_AREA = 0.09; // 30 m × 30 m = 0.09 ha
+
+        function cogUrl(variable, year) {
+            return `s3://${R2_BUCKET}/esf-${variable}/${variable}_${year}_cog.tif`;
+        }
+
+        async function fetchStat(variable, year, feature) {
+            const url = `${TITILER}/cog/statistics?url=${encodeURIComponent(cogUrl(variable, year))}`;
+            const r = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(feature)
+            });
+            const data = await r.json();
+            const s = data.properties?.statistics?.b1;
+            return s ? s.sum * PIXEL_AREA : null;
+        }
+
+        // ── Results panel ─────────────────────────────────────────────
+        const resultsSection = document.getElementById('results-section');
+        const resultsDivider = document.getElementById('results-divider');
+        let activeChart = null;
+
+        function showParcelHeader(parcelProps) {
+            resultsDivider.style.display = '';
+            resultsSection.innerHTML = `
+                <div class="parcel-class">${propClassLabel(parcelProps.PROP_CLASS)}</div>
+                <div class="parcel-id-wrap">
+                    <span class="parcel-id-label">Tax ID</span>
+                    <span class="parcel-id">${parcelProps.SWIS_SBL_ID}</span>
+                </div>
+                <div class="parcel-meta">${parcelProps.acres} acres &nbsp;&middot;&nbsp; Greene County</div>
+                <button class="load-btn" id="load-btn">Load carbon history (1990&ndash;2023)</button>
+                <div id="chart-area"></div>
+            `;
+        }
+
+        async function loadCarbonHistory(feature, parcelProps) {
+            const chartArea = document.getElementById('chart-area');
+            document.getElementById('load-btn').remove();
+            chartArea.innerHTML = '<p class="chart-loading">Fetching 34 years of data&hellip;</p>';
+
+            const [agcValues, bgcValues] = await Promise.all([
+                Promise.all(YEARS.map(y => fetchStat('agc', y, feature).catch(() => null))),
+                Promise.all(YEARS.map(y => fetchStat('bgc', y, feature).catch(() => null)))
+            ]);
+
+            const agc1990 = agcValues[0],  agc2023 = agcValues[agcValues.length - 1];
+            const bgc1990 = bgcValues[0],  bgc2023 = bgcValues[bgcValues.length - 1];
+            const agcDelta = agc2023 != null && agc1990 != null ? agc2023 - agc1990 : null;
+            const bgcDelta = bgc2023 != null && bgc1990 != null ? bgc2023 - bgc1990 : null;
+
+            function fmtDelta(d) {
+                if (d == null) return '<span class="stat-sub">N/A</span>';
+                const cls  = d >= 0 ? 'stat-delta-pos' : 'stat-delta-neg';
+                const sign = d >= 0 ? '+' : '';
+                return `<span class="${cls}">${sign}${Math.round(d)} Mg C since 1990</span>`;
+            }
+
+            chartArea.innerHTML = `
+                <div class="chart-wrap"><canvas id="carbon-chart" height="220"></canvas></div>
+                <button class="download-btn" id="download-csv-btn">&#8595; Download CSV</button>
+            `;
+
+            document.getElementById('download-csv-btn').addEventListener('click', () => {
+                const rows = ['year,agc_MgC,bgc_MgC'];
+                YEARS.forEach((yr, i) => {
+                    const agc = agcValues[i] != null ? Math.round(agcValues[i]) : '';
+                    const bgc = bgcValues[i] != null ? Math.round(bgcValues[i]) : '';
+                    rows.push(`${yr},${agc},${bgc}`);
+                });
+                const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${parcelProps.SWIS_SBL_ID}_${parcelProps.COUNTY_NAME}_carbon_history.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            if (activeChart) { activeChart.destroy(); activeChart = null; }
+
+            activeChart = new Chart(document.getElementById('carbon-chart'), {
+                type: 'line',
+                data: {
+                    labels: YEARS,
+                    datasets: [
+                        {
+                            label: 'AGC',
+                            data: agcValues,
+                            borderColor: '#2d6a4f',
+                            backgroundColor: 'rgba(45,106,79,0.08)',
+                            borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3
+                        },
+                        {
+                            label: 'BGC',
+                            data: bgcValues,
+                            borderColor: '#52b788',
+                            backgroundColor: 'rgba(82,183,136,0.08)',
+                            borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+                    },
+                    scales: {
+                        x: { ticks: { font: { size: 9 }, maxTicksLimit: 9 } },
+                        y: {
+                            ticks: { font: { size: 9 } },
+                            title: { display: true, text: 'Mg C stored', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ── Address search ────────────────────────────────────────────
+        async function geocodeAddress(query) {
+            const params = new URLSearchParams({
+                q: query,
+                format: 'json',
+                limit: 1,
+                countrycodes: 'us',
+                viewbox: '-74.8,41.85,-73.6,42.65',
+                bounded: 0
+            });
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+                headers: { 'Accept-Language': 'en' }
+            });
+            const data = await r.json();
+            return data[0] || null;
+        }
+
+        async function handleSearch() {
+            const query = document.getElementById('address-input').value.trim();
+            const errorEl = document.getElementById('search-error');
+            if (!query) return;
+            errorEl.style.display = 'none';
+            const result = await geocodeAddress(query).catch(() => null);
+            if (!result) {
+                errorEl.textContent = 'Location not found. Try a more specific address.';
+                errorEl.style.display = '';
+                return;
+            }
+            map.setView([parseFloat(result.lat), parseFloat(result.lon)], 18);
+        }
+
+        document.getElementById('search-btn').addEventListener('click', handleSearch);
+        document.getElementById('address-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter') handleSearch();
+        });
+
+        // ── Map setup ─────────────────────────────────────────────────
+        function parseHash() {
+            const params = {};
+            const hash = window.location.hash.replace(/^#/, '');
+            if (!hash) return params;
+            hash.split('&').forEach(part => {
+                const [k, v] = part.split('=');
+                if (k && v !== undefined) params[decodeURIComponent(k)] = decodeURIComponent(v);
+            });
+            return params;
+        }
+
+        function updateHash() {
+            const center = map.getCenter();
+            history.replaceState(null, '', '#' + [
+                `lat=${center.lat.toFixed(4)}`,
+                `lon=${center.lng.toFixed(4)}`,
+                `z=${map.getZoom()}`,
+                `base=${currentBasemap === basemapSatellite ? 'satellite' : 'map'}`
+            ].join('&'));
+        }
+
+        const h = parseHash();
+        const initLat  = parseFloat(h.lat) || 42.25;
+        const initLon  = parseFloat(h.lon) || -74.2;
+        const initZoom = parseInt(h.z)     || 11;
+
+        const map = L.map('map').setView([initLat, initLon], initZoom);
+
+        const basemapStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google', maxZoom: 20
+        });
+        const basemapSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google', maxZoom: 20
+        });
+        let currentBasemap = h.base === 'satellite' ? basemapSatellite : basemapStreets;
+        currentBasemap.addTo(map);
+
+        map.on('moveend zoomend', updateHash);
+
+        // ── Map controls ──────────────────────────────────────────────
+        const ctrlPanel = L.control({ position: 'topright' });
+        ctrlPanel.onAdd = function() {
+            const div = L.DomUtil.create('div', 'map-control-panel');
+            div.innerHTML = `
+                <div class="basemap-picker">
+                    <label><input type="radio" name="basemap" value="map" ${h.base !== 'satellite' ? 'checked' : ''}> Streets</label>
+                    <label><input type="radio" name="basemap" value="satellite" ${h.base === 'satellite' ? 'checked' : ''}> Satellite</label>
+                </div>
+                <button class="toggle-btn active" id="parcel-btn">Parcels</button>
+            `;
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
+            return div;
+        };
+        ctrlPanel.addTo(map);
+        // addTo() is synchronous — control DOM is ready immediately
+        document.querySelectorAll('input[name="basemap"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.value === 'satellite') {
+                    map.removeLayer(basemapStreets);
+                    basemapSatellite.addTo(map);
+                    basemapSatellite.bringToBack();
+                    currentBasemap = basemapSatellite;
+                } else {
+                    map.removeLayer(basemapSatellite);
+                    basemapStreets.addTo(map);
+                    basemapStreets.bringToBack();
+                    currentBasemap = basemapStreets;
+                }
+                updateHash();
+            });
+        });
+        document.getElementById('parcel-btn').addEventListener('click', () => {
+            parcelVisible = !parcelVisible;
+            document.getElementById('parcel-btn').classList.toggle('active', parcelVisible);
+            updateParcelVisibility();
+        });
+
+        const legendCtrl = L.control({ position: 'bottomright' });
+        legendCtrl.onAdd = function() {
+            const div = L.DomUtil.create('div', 'map-legend');
+            div.innerHTML = `
+                <div class="legend-title">AGC change 1990&ndash;2023 (Mg C/ha)</div>
+                <div class="legend-items">
+                    <div class="legend-item"><span class="legend-swatch" style="background:#d73027"></span> Loss (&lt;&nbsp;0)</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#fee08b"></span> 0 – 20</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#a6d96a"></span> 20 – 40</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#1a9850"></span> 40 – 60</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#006837"></span> 60+</div>
+                </div>
+            `;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        };
+        legendCtrl.addTo(map);
+
+        // ── Parcel layer ──────────────────────────────────────────────
+        let parcelLayer      = null;
+        let parcelVisible    = true;
+        let highlightedLayer = null;
+        let selectedLayer    = null;
+
+        // Choropleth: live carbon delta 1990–2023 (Mg C/ha mean)
+        function getDeltaColor(v) {
+            if (v == null) return '#cccccc';
+            if (v <   0)  return '#d73027';
+            if (v <  20)  return '#fee08b';
+            if (v <  40)  return '#a6d96a';
+            if (v <  60)  return '#1a9850';
+            return '#006837';
+        }
+
+        function parcelStyle(feature) {
+            return {
+                color: '#444', weight: 0.4,
+                fillColor: getDeltaColor(feature.properties.live_c_delta_90_23_mean),
+                fillOpacity: 0.78
+            };
+        }
+        function highlightStyle(feature) {
+            return { ...parcelStyle(feature), weight: 2.2, color: '#111', fillOpacity: 0.92 };
+        }
+        function selectedStyle(feature) {
+            return { ...parcelStyle(feature), weight: 3, color: '#000', fillOpacity: 1.0 };
+        }
+
+        const PROP_CLASS_LABELS = {
+            '100': 'Agricultural',
+            '105': 'Agricultural vacant land (productive)',
+            '110': 'Livestock and products',
+            '111': 'Poultry and poultry products',
+            '112': 'Dairy products',
+            '113': 'Cattle calves hogs',
+            '114': 'Sheep and wool',
+            '115': 'Honey and beeswax',
+            '116': 'Other livestock',
+            '117': 'Horse farms',
+            '120': 'Field crops',
+            '129': 'Acquired development rights',
+            '130': 'Truck crops – mucklands',
+            '140': 'Truck crops – not mucklands',
+            '150': 'Orchard crops',
+            '151': 'Apples pears peaches cherries',
+            '152': 'Vineyards',
+            '160': 'Other fruits',
+            '170': 'Nursery and greenhouse',
+            '180': 'Specialty farms',
+            '181': 'Fur products',
+            '182': 'Pheasant',
+            '183': 'Aquatic farms',
+            '184': 'Livestock specialty',
+            '190': 'Fish game and wildlife preserves',
+            '200': 'Residential',
+            '210': 'One family year-round residence',
+            '215': 'One family year-round with accessory apartment',
+            '220': 'Two family year-round residence',
+            '230': 'Three family year-round residence',
+            '240': 'Rural residence with acreage',
+            '241': 'Primary residential agricultural production',
+            '242': 'Recreational use',
+            '250': 'Estate',
+            '260': 'Seasonal residences',
+            '270': 'Manufactured home',
+            '271': 'Multiple manufactured homes',
+            '280': 'Residential multi-purpose/multi-structure',
+            '281': 'Multiple residences',
+            '283': 'Residence with incidental commercial use',
+            '300': 'Vacant land',
+            '310': 'Residential vacant',
+            '311': 'Residential vacant land',
+            '312': 'Residential land with small improvement',
+            '314': 'Rural vacant lots of 10 acres or less',
+            '315': 'Underwater vacant land',
+            '320': 'Rural vacant',
+            '321': 'Abandoned agricultural land',
+            '322': 'Residential vacant land over 10 acres',
+            '323': 'Other rural vacant lands',
+            '330': 'Vacant land in commercial areas',
+            '331': 'Commercial vacant land with minor improvements',
+            '340': 'Vacant land in industrial areas',
+            '341': 'Industrial vacant land with minor improvements',
+            '350': 'Urban renewal or slum clearance',
+            '351': 'Shell building – residential',
+            '352': 'Shell building – commercial',
+            '380': 'Public utility vacant land',
+            '400': 'Commercial',
+            '410': 'Living accommodations',
+            '411': 'Apartments',
+            '414': 'Hotel',
+            '415': 'Motel',
+            '416': 'Manufactured home parks',
+            '417': 'Camps cottages bungalows',
+            '418': 'Inns lodges boarding houses',
+            '420': 'Dining establishments',
+            '421': 'Restaurants',
+            '422': 'Diners and luncheonettes',
+            '423': 'Snack bars drive-ins ice cream bars',
+            '424': 'Night clubs',
+            '425': 'Bar',
+            '426': 'Fast food franchises',
+            '430': 'Motor vehicle services',
+            '431': 'Auto dealers – sales and service',
+            '432': 'Service and gas stations',
+            '433': 'Auto body tire shops',
+            '434': 'Automatic car wash',
+            '435': 'Manual car wash',
+            '436': 'Self-service car wash',
+            '437': 'Parking garage',
+            '438': 'Parking lot',
+            '439': 'Small parking garage',
+            '440': 'Storage warehouse and distribution',
+            '441': 'Fuel storage and distribution',
+            '442': 'Mini warehouse (self-storage)',
+            '443': 'Grain and feed elevators',
+            '444': 'Lumber yards sawmills',
+            '445': 'Coal yards bins',
+            '446': 'Cold storage facilities',
+            '447': 'Trucking terminals',
+            '448': 'Piers wharves docks',
+            '449': 'Other storage warehouse distribution',
+            '450': 'Retail services',
+            '451': 'Regional shopping centers',
+            '452': 'Area or neighborhood shopping centers',
+            '453': 'Large retail outlets',
+            '454': 'Large retail food stores',
+            '455': 'Dealerships – sales and service',
+            '456': 'Medium retail outlet',
+            '457': 'Small retail outlet',
+            '460': 'Banks and office buildings',
+            '461': 'Standard bank – single occupant',
+            '462': 'Drive-in branch bank',
+            '463': 'Bank complex with office building',
+            '464': 'Office building',
+            '465': 'Professional building',
+            '470': 'Miscellaneous services',
+            '471': 'Funeral homes',
+            '472': 'Dog kennels veterinary clinics',
+            '473': 'Greenhouses',
+            '474': 'Billboards',
+            '475': 'Junkyards',
+            '480': 'Multiple use or multi-purpose',
+            '481': 'Downtown row type (common wall)',
+            '482': 'Downtown row type (detached)',
+            '483': 'Converted residence',
+            '484': 'One story small structure',
+            '485': 'One story small structure – multi-occupant',
+            '486': 'Minimart',
+            '500': 'Recreation and entertainment',
+            '510': 'Entertainment assembly',
+            '511': 'Legitimate theaters',
+            '512': 'Motion picture theaters',
+            '513': 'Drive-in theaters',
+            '514': 'Auditoriums exhibition halls',
+            '515': 'Radio television motion picture studios',
+            '520': 'Sports assembly',
+            '521': 'Stadiums arenas armories field houses',
+            '522': 'Racetracks',
+            '530': 'Amusement facilities',
+            '531': 'Fairgrounds',
+            '532': 'Amusement parks',
+            '533': 'Game farms',
+            '534': 'Social organizations',
+            '540': 'Indoor sports facilities',
+            '541': 'Bowling centers',
+            '542': 'Ice or roller skating rinks',
+            '543': 'YMCAs YWCAs',
+            '544': 'Health spas',
+            '545': 'Indoor swimming pools',
+            '546': 'Other indoor sports',
+            '550': 'Outdoor sports activities',
+            '551': 'Skiing centers',
+            '552': 'Public golf courses',
+            '553': 'Private golf country clubs',
+            '554': 'Outdoor swimming pools',
+            '555': 'Riding stables',
+            '556': 'Ice or roller skating rinks (covered)',
+            '557': 'Other outdoor sports',
+            '560': 'Improved beaches',
+            '570': 'Marinas',
+            '580': 'Camps camping facilities resorts',
+            '581': 'Camps',
+            '582': 'Camping facilities',
+            '583': 'Resort complexes',
+            '590': 'Parks',
+            '591': 'Playgrounds',
+            '592': 'Athletic fields',
+            '593': 'Picnic grounds',
+            '600': 'Community services',
+            '610': 'Education',
+            '611': 'Libraries',
+            '612': 'Schools',
+            '613': 'Colleges and universities',
+            '614': 'Special schools and institutions',
+            '615': 'Other educational facilities',
+            '620': 'Religious',
+            '630': 'Welfare',
+            '631': 'Orphanages',
+            '632': 'Benevolent and moral associations',
+            '633': 'Homes for the aged',
+            '640': 'Health',
+            '641': 'Hospitals',
+            '642': 'All other health facilities',
+            '650': 'Government',
+            '651': 'Highway garage',
+            '652': 'Office building (government)',
+            '653': 'Parking lots (government)',
+            '660': 'Protection',
+            '661': 'Military installations',
+            '662': 'Police and fire protection',
+            '670': 'Correctional',
+            '680': 'Cultural and recreational',
+            '681': 'Cultural facilities',
+            '682': 'Recreational facilities',
+            '690': 'Miscellaneous community services',
+            '691': 'Professional associations',
+            '692': 'Roads streets highways parkways',
+            '693': 'Indian reservations',
+            '694': 'Animal welfare shelters',
+            '695': 'Cemeteries',
+            '700': 'Industrial',
+            '712': 'High-tech manufacturing and processing',
+            '714': 'Light industrial manufacturing and processing',
+            '715': 'Heavy manufacturing and processing',
+            '720': 'Mining and quarrying',
+            '730': 'Wells',
+            '731': 'Oil – natural flow',
+            '732': 'Oil – forced flow',
+            '733': 'Gas (for production)',
+            '734': 'Junk',
+            '735': 'Water used for oil production',
+            '736': 'Gas or oil storage wells',
+            '740': 'Industrial product pipelines',
+            '741': 'Gas pipelines',
+            '742': 'Water pipelines',
+            '743': 'Brine pipelines',
+            '744': 'Petroleum product pipelines',
+            '749': 'Other pipelines',
+            '800': 'Public services',
+            '820': 'Water',
+            '821': 'Flood control',
+            '822': 'Water supply',
+            '823': 'Water treatment facilities',
+            '826': 'Water transmission – improvements',
+            '827': 'Water transmission – outside plant',
+            '830': 'Communication',
+            '831': 'Telephone',
+            '832': 'Telegraph',
+            '833': 'Radio',
+            '834': 'Television',
+            '835': 'Community antenna television',
+            '836': 'Telephone outside plant',
+            '837': 'Cellular telephone towers',
+            '840': 'Transportation',
+            '841': 'Motor vehicle',
+            '842': 'Ceiling railroad',
+            '843': 'Non-ceiling railroad',
+            '844': 'Air transportation',
+            '845': 'Water transportation',
+            '846': 'Bridges tunnels subways',
+            '847': 'Pipelines (transportation)',
+            '850': 'Waste disposal',
+            '851': 'Solid wastes',
+            '852': 'Landfills and dumps',
+            '853': 'Sewage treatment and water pollution control',
+            '854': 'Air pollution control',
+            '860': 'Special franchise property',
+            '861': 'Electric and gas (franchise)',
+            '862': 'Water (franchise)',
+            '866': 'Telephone (franchise)',
+            '867': 'Miscellaneous (franchise)',
+            '868': 'Pipelines (franchise)',
+            '869': 'Television (franchise)',
+            '870': 'Electric and gas',
+            '871': 'Electric and gas facilities',
+            '872': 'Electric substation / power generation',
+            '873': 'Gas measuring and regulation station',
+            '874': 'Electric power generation – hydro',
+            '875': 'Electric power generation – fossil fuel',
+            '876': 'Electric power generation – nuclear',
+            '877': 'Electric power generation – other fuel',
+            '878': 'Electric power generation – solar',
+            '879': 'Electric power generation – wind',
+            '880': 'Electric and gas transmission and distribution',
+            '882': 'Electric transmission improvement',
+            '883': 'Gas transmission improvement',
+            '884': 'Electric distribution – outside plant',
+            '885': 'Gas distribution – outside plant',
+            '900': 'Wild forested conservation lands and public parks',
+            '910': 'Private wild and forest lands',
+            '911': 'Forest land under Section 480',
+            '912': 'Forest land under Section 480-a',
+            '920': 'Private hunting and fishing clubs',
+            '930': 'State-owned forest lands',
+            '931': 'State-owned forest preserve lands',
+            '932': 'State-owned land (other designations)',
+            '940': 'Reforested land and conservation',
+            '941': 'State-owned reforested land',
+            '942': 'County-owned reforested land',
+            '950': 'Hudson River-Black River Regulating District',
+            '960': 'Public parks',
+            '961': 'State-owned public parks',
+            '962': 'County-owned public parks',
+            '963': 'City town village public parks',
+            '970': 'Other wild or conservation lands',
+            '971': 'Wetlands',
+            '972': 'Land under water',
+            '980': 'Taxable state-owned conservation easements',
+            '990': 'Other taxable state land',
+            '991': 'Adirondack Park aggregate assessments',
+            '992': 'Hudson River-Black River Regulating District aggregate',
+            '993': 'Transition assessments for taxable state land',
+            '994': 'Transition assessments for exempt state land',
+        };
+
+        function propClassLabel(code) {
+            return PROP_CLASS_LABELS[String(code)] || `Class ${code}`;
+        }
+
+        function onEachParcel(feature, layer) {
+            layer.on({
+                mouseover(e) {
+                    if (e.target === selectedLayer) return;
+                    if (highlightedLayer && highlightedLayer !== e.target) {
+                        highlightedLayer.setStyle(parcelStyle(highlightedLayer.feature));
+                    }
+                    e.target.setStyle(highlightStyle(feature));
+                    highlightedLayer = e.target;
+                },
+                mouseout(e) {
+                    if (e.target === selectedLayer) return;
+                    e.target.setStyle(parcelStyle(feature));
+                    highlightedLayer = null;
+                },
+                click(e) {
+                    L.DomEvent.stopPropagation(e);
+                    if (selectedLayer) selectedLayer.setStyle(parcelStyle(selectedLayer.feature));
+                    selectedLayer = e.target;
+                    selectedLayer.setStyle(selectedStyle(feature));
+
+                    if (activeChart) { activeChart.destroy(); activeChart = null; }
+                    showParcelHeader(feature.properties);
+
+                    document.getElementById('load-btn').addEventListener('click', () => {
+                        loadCarbonHistory(feature, feature.properties);
+                    });
+                }
+            });
+        }
+
+        const loadingEl = document.getElementById('loading');
+        loadingEl.style.display = 'block';
+
+        fetch('green_county.geojson')
+            .then(r => r.json())
+            .then(data => {
+                loadingEl.style.display = 'none';
+                parcelLayer = L.geoJSON(data, { style: parcelStyle, onEachFeature: onEachParcel });
+                updateParcelVisibility();
+            })
+            .catch(err => {
+                loadingEl.textContent = 'Failed to load parcels';
+                console.error(err);
+            });
+
+        function updateParcelVisibility() {
+            if (!parcelLayer) return;
+            const shouldShow = parcelVisible && map.getZoom() > 13;
+            if (shouldShow && !map.hasLayer(parcelLayer)) {
+                parcelLayer.addTo(map);
+                parcelLayer.bringToFront();
+            } else if (!shouldShow && map.hasLayer(parcelLayer)) {
+                map.removeLayer(parcelLayer);
+            }
+        }
+
+        map.on('zoomend', updateParcelVisibility);
+    </script>
+</body>
+</html>
