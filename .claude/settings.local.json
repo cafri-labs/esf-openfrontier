@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python -m http.server:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git ls-remote:*)"
     ]
   }
 }

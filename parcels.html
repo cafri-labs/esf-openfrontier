@@ -36,13 +36,10 @@
         }
         .basemap-picker { display: flex; gap: 10px; font-size: 12px; color: #333; }
         .basemap-picker label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        .toggle-btn {
-            padding: 4px 10px; border: 2px solid #555; border-radius: 6px;
-            background: white; cursor: pointer; font-size: 11px; font-weight: 600;
-            transition: all 0.15s; width: 100%;
-        }
-        .toggle-btn.active { background: #2d6a4f; color: white; border-color: #2d6a4f; }
-        .toggle-btn:hover:not(.active) { background: #e8e8e8; }
+        .opacity-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #333; }
+        .opacity-row label { white-space: nowrap; font-weight: 600; }
+        .opacity-row input[type=range] { flex: 1; cursor: pointer; }
+        .opacity-row span { min-width: 30px; text-align: right; }
 
         /* Map legend */
         .map-legend {
@@ -400,7 +397,11 @@
                     <label><input type="radio" name="basemap" value="map" ${h.base !== 'satellite' ? 'checked' : ''}> Streets</label>
                     <label><input type="radio" name="basemap" value="satellite" ${h.base === 'satellite' ? 'checked' : ''}> Satellite</label>
                 </div>
-                <button class="toggle-btn active" id="parcel-btn">Parcels</button>
+                <div class="opacity-row">
+                    <label for="parcel-opacity">Parcels</label>
+                    <input type="range" id="parcel-opacity" min="0" max="100" value="50">
+                    <span id="parcel-opacity-val">50%</span>
+                </div>
             `;
             L.DomEvent.disableClickPropagation(div);
             L.DomEvent.disableScrollPropagation(div);
@@ -424,9 +425,9 @@
                 updateHash();
             });
         });
-        document.getElementById('parcel-btn').addEventListener('click', () => {
-            parcelVisible = !parcelVisible;
-            document.getElementById('parcel-btn').classList.toggle('active', parcelVisible);
+        document.getElementById('parcel-opacity').addEventListener('input', function() {
+            document.getElementById('parcel-opacity-val').textContent = this.value + '%';
+            parcelOpacity = parseInt(this.value) / 100;
             updateParcelVisibility();
         });
 
@@ -436,11 +437,11 @@
             div.innerHTML = `
                 <div class="legend-title">AGC change 1990&ndash;2023 (Mg C/ha)</div>
                 <div class="legend-items">
-                    <div class="legend-item"><span class="legend-swatch" style="background:#d73027"></span> Loss (&lt;&nbsp;0)</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#fee08b"></span> 0 – 20</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#a6d96a"></span> 20 – 40</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#1a9850"></span> 40 – 60</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#006837"></span> 60+</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#E69F00"></span> Loss (&lt;&nbsp;0)</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#fffde7"></span> 0 – 20</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#80cbc4"></span> 20 – 40</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#00838f"></span> 40 – 60</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#006064"></span> 60+</div>
                 </div>
             `;
             L.DomEvent.disableClickPropagation(div);
@@ -450,32 +451,32 @@
 
         // ── Parcel layer ──────────────────────────────────────────────
         let parcelLayer      = null;
-        let parcelVisible    = true;
+        let parcelOpacity    = 0.5;
         let highlightedLayer = null;
         let selectedLayer    = null;
 
         // Choropleth: live carbon delta 1990–2023 (Mg C/ha mean)
         function getDeltaColor(v) {
             if (v == null) return '#cccccc';
-            if (v <   0)  return '#d73027';
-            if (v <  20)  return '#fee08b';
-            if (v <  40)  return '#a6d96a';
-            if (v <  60)  return '#1a9850';
-            return '#006837';
+            if (v <   0)  return '#E69F00';
+            if (v <  20)  return '#fffde7';
+            if (v <  40)  return '#80cbc4';
+            if (v <  60)  return '#00838f';
+            return '#006064';
         }
 
         function parcelStyle(feature) {
             return {
-                color: '#444', weight: 0.4,
+                color: '#444', weight: 0.4, opacity: parcelOpacity,
                 fillColor: getDeltaColor(feature.properties.live_c_delta_90_23_mean),
-                fillOpacity: 0.78
+                fillOpacity: parcelOpacity
             };
         }
         function highlightStyle(feature) {
-            return { ...parcelStyle(feature), weight: 2.2, color: '#111', fillOpacity: 0.92 };
+            return { ...parcelStyle(feature), weight: 2.2, color: '#111', fillOpacity: Math.min(parcelOpacity + 0.2, 1) };
         }
         function selectedStyle(feature) {
-            return { ...parcelStyle(feature), weight: 3, color: '#000', fillOpacity: 1.0 };
+            return { ...parcelStyle(feature), weight: 3, color: '#000', fillOpacity: Math.min(parcelOpacity + 0.3, 1) };
         }
 
         const PROP_CLASS_LABELS = {
@@ -818,12 +819,15 @@
 
         function updateParcelVisibility() {
             if (!parcelLayer) return;
-            const shouldShow = parcelVisible && map.getZoom() > 8;
+            const shouldShow = parcelOpacity > 0 && map.getZoom() > 10;
             if (shouldShow && !map.hasLayer(parcelLayer)) {
                 parcelLayer.addTo(map);
                 parcelLayer.bringToFront();
             } else if (!shouldShow && map.hasLayer(parcelLayer)) {
                 map.removeLayer(parcelLayer);
+            }
+            if (shouldShow) {
+                parcelLayer.setStyle({ fillOpacity: parcelOpacity, opacity: parcelOpacity });
             }
         }
 
