@@ -4,7 +4,8 @@ Build COGs for ESF Landsat Ensemble Data.
 Converts ESF Landsat ensemble data from per-year S3 tiles into
 COGs uploaded to Cloudflare R2.
 
-Each (variable, year) pair is processed in parallel on a Coiled Dask worker.
+Each (variable, year) pair is processed in parallel using ProcessPoolExecutor.
+Recommended: run on an EC2 r5.4xlarge (16 vCPU, 128 GB) or larger.
 
 Usage:
 
@@ -18,13 +19,12 @@ Usage:
 import os
 import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import coiled
 import fsspec
 import numpy as np
 import rasterio
-from dask.distributed import Client, as_completed
 from osgeo import gdal
 from rasterio.crs import CRS
 from rio_cogeo.cogeo import cog_translate
@@ -38,17 +38,17 @@ YEARS = range(1990, 2024)
 SOURCE_BUCKET = 'cafri-share'
 SOURCE_VERSION = '2.0.0'
 
-R2_ENDPOINT = 'https://9cbdcb4884f86a6779032ae561e474a5.r2.cloudflarestorage.com'
+R2_ENDPOINT = 'https://9b09ae0d6de9d5f05feda24c975cf645.r2.cloudflarestorage.com'
 R2_BUCKET = 'osc'
 
-# Coiled cluster settings
-N_WORKERS = 17
-WORKER_MEMORY = '16 GiB'
-COILED_SOFTWARE = 'esf'
-COILED_WORKSPACE = 'osc-aws'
-COILED_REGION = 'us-east-1'
+# Number of parallel workers.
+# Each task needs ~6-8 GB RAM. Set based on available memory:
+#   r5.4xlarge  (128 GB) -> 16 workers
+#   r5.2xlarge  (64 GB)  ->  8 workers
+#   r5.xlarge   (32 GB)  ->  4 workers
+N_WORKERS = 16
 
-# Credentials env var names (forwarded to workers)
+# Credentials env var names (must be set in environment before running)
 CRED_ENV_VARS = [
     'ESF_AWS_ACCESS_KEY_ID',
     'ESF_AWS_SECRET_ACCESS_KEY',
@@ -60,7 +60,7 @@ CRED_ENV_VARS = [
 # ---------- Worker function ----------
 
 def process_year(args):
-    """Process a single (variable, year) on a Dask worker: VRT -> COG -> upload."""
+    """Process a single (variable, year): VRT -> COG -> upload to R2."""
     variable, year = args
 
     import os
@@ -68,6 +68,7 @@ def process_year(args):
     import time
     from pathlib import Path
 
+    import boto3
     import fsspec
     import numpy as np
     import rasterio
@@ -80,15 +81,14 @@ def process_year(args):
 
     source_bucket = 'cafri-share'
     source_prefix = f'landsat_ensemble_{variable}_2.0.0'
-    r2_endpoint = 'https://9cbdcb4884f86a6779032ae561e474a5.r2.cloudflarestorage.com'
+    r2_endpoint = 'https://9b09ae0d6de9d5f05feda24c975cf645.r2.cloudflarestorage.com'
     r2_bucket = 'osc'
     r2_prefix = f'esf-{variable}'
 
-    # Configure GDAL for S3 reads on this worker
+    # Configure GDAL for S3 reads
     esf_key = os.environ['ESF_AWS_ACCESS_KEY_ID']
     esf_secret = os.environ['ESF_AWS_SECRET_ACCESS_KEY']
 
-    # Set credentials via GDAL config options (more reliable than env vars)
     gdal.SetConfigOption('AWS_ACCESS_KEY_ID', esf_key)
     gdal.SetConfigOption('AWS_SECRET_ACCESS_KEY', esf_secret)
     gdal.SetConfigOption('AWS_DEFAULT_REGION', 'us-east-1')
@@ -178,7 +178,6 @@ def process_year(args):
         size_mb = cog_path.stat().st_size / 1e6
 
         # --- Upload to R2 ---
-        import boto3
         r2_client = boto3.client(
             's3',
             endpoint_url=r2_endpoint,
@@ -200,42 +199,34 @@ def main():
     print(f'Processing {len(VARIABLES)} variable(s) x {len(list(YEARS))} years = {len(tasks)} tasks')
     print(f'Variables: {", ".join(VARIABLES)}')
     print(f'Years: {YEARS[0]}–{YEARS[-1]}')
-    print(f'Output: R2 bucket "{R2_BUCKET}"\n')
+    print(f'Output: R2 bucket "{R2_BUCKET}"')
+    print(f'Workers: {N_WORKERS}\n')
 
-    # Verify credentials are available locally before spinning up a cluster
+    # Verify credentials are set before spawning workers
     for var in CRED_ENV_VARS:
         if not os.environ.get(var):
             raise RuntimeError(f'Missing environment variable: {var}')
 
-    # Forward credentials to workers via environ
-    worker_env = {var: os.environ[var] for var in CRED_ENV_VARS}
-
-    print(f'Starting Coiled cluster ({N_WORKERS} workers, {WORKER_MEMORY} each)...')
-    cluster = coiled.Cluster(
-        n_workers=N_WORKERS,
-        worker_memory=WORKER_MEMORY,
-        workspace=COILED_WORKSPACE,
-        software=COILED_SOFTWARE,
-        region=COILED_REGION,
-        environ=worker_env,
-    )
-    client = Client(cluster)
-    print(f'Dashboard: {client.dashboard_link}\n')
-
-    # Map all (variable, year) pairs across workers
-    futures = client.map(process_year, tasks)
-
+    # Workers inherit env vars from the parent process
     completed = 0
-    for future in as_completed(futures):
-        variable, year, size_mb, elapsed = future.result()
-        completed += 1
-        print(f'  [{completed}/{len(tasks)}] {variable} {year}: {size_mb:.0f} MB ({elapsed:.0f}s)')
+    errors = []
 
-    print('\nAll COGs uploaded.\n')
+    with ProcessPoolExecutor(max_workers=N_WORKERS) as executor:
+        futures = {executor.submit(process_year, task): task for task in tasks}
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                variable, year, size_mb, elapsed = future.result()
+                completed += 1
+                print(f'  [{completed}/{len(tasks)}] {variable} {year}: {size_mb:.0f} MB ({elapsed:.0f}s)')
+            except Exception as e:
+                errors.append((task, str(e)))
+                print(f'  ERROR {task}: {e}')
 
-    client.close()
-    cluster.close()
-    print('Done!')
+    print(f'\nDone: {completed} succeeded, {len(errors)} failed.')
+    if errors:
+        for task, msg in errors:
+            print(f'  FAILED {task}: {msg}')
 
 
 if __name__ == '__main__':
