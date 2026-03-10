@@ -63,13 +63,13 @@
   "links": [
     {
       "rel": "xyz",
-      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis",
+      "href": "https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis",
       "type": "image/png",
       "title": "BGC 1990 XYZ tiles"
     },
     {
       "rel": "wmts",
-      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/WMTSCapabilities.xml?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis",
+      "href": "https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com/cog/WMTSCapabilities.xml?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis",
       "type": "application/xml",
       "title": "BGC 1990 WMTS",
       "wmts:layer": "bgc_1990"
@@ -95,7 +95,7 @@
   ],
   "assets": {
     "data": {
-      "href": "s3://osc/esf-bgc/bgc_1990_cog.tif",
+      "href": "s3://cafri/esf-bgc/bgc_1990_cog.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "BGC 1990",
       "roles": [
@@ -103,7 +103,7 @@
       ]
     },
     "thumbnail": {
-      "href": "https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com/cog/preview.png?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis&max_size=512",
+      "href": "https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com/cog/preview.png?url=s3%3A%2F%2Fosc%2Fesf-bgc%2Fbgc_1990_cog.tif&rescale=0%2C75&colormap_name=viridis&max_size=512",
       "type": "image/png",
       "title": "BGC 1990 preview",
       "roles": [

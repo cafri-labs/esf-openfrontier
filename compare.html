@@ -235,8 +235,8 @@
     </div>
 
     <script>
-        const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
-        const R2_BUCKET = 'osc';
+        const TITILER = 'https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com';
+        const R2_BUCKET = 'cafri';
 
         const VAR_INFO = {
             agb: { label: 'AGB', unit: 'Mg/ha', max: 250 },
@@ -282,8 +282,9 @@
         const initBase = h.base || 'map';
 
         function tileUrl(variable, year) {
-            return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
-                + `?variable=${variable}&time=${year}&colormap_name=viridis`;
+            const rescale = `0,${VAR_INFO[variable].max}`;
+            return `${TITILER}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
+                + `?url=${encodeURIComponent(cogUrl(variable, year))}&rescale=${rescale}&colormap_name=viridis`;
         }
 
         function cogUrl(variable, year) {

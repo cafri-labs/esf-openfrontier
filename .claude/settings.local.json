@@ -4,7 +4,9 @@
       "Bash(python -m http.server:*)",
       "Bash(python3:*)",
       "Bash(git ls-remote:*)",
-      "Bash(npx staticrypt:*)"
+      "Bash(npx staticrypt:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:pypi.org)"
     ]
   }
 }

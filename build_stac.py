@@ -49,8 +49,8 @@ VARIABLES = {
 }
 
 YEARS = range(1990, 2024)
-TITILER_BASE = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com'
-R2_BUCKET = 'osc'
+TITILER_BASE = 'https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com'
+R2_BUCKET = 'cafri'
 
 REPO_ROOT = Path(__file__).resolve().parent
 

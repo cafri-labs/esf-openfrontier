@@ -39,7 +39,7 @@ SOURCE_BUCKET = 'cafri-share'
 SOURCE_VERSION = '2.0.0'
 
 R2_ENDPOINT = 'https://9b09ae0d6de9d5f05feda24c975cf645.r2.cloudflarestorage.com'
-R2_BUCKET = 'osc'
+R2_BUCKET = 'cafri'
 
 # Number of parallel workers.
 # Each task needs ~6-8 GB RAM. Set based on available memory:

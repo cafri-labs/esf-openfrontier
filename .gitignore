@@ -190,12 +190,16 @@ cython_debug/
 cogs/
 stac/
 
+# Titiler CDK deployment (cloned separately, not part of this repo)
+titiler/
+
 # Secrets
 submit_coiled.sh
 secrets.env
 
 # Claude Code
 CLAUDE.md
+.claude/
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to

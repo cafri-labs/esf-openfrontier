@@ -170,7 +170,7 @@
     </div>
 
     <script>
-        const TITILER = 'https://vaiqqtybhb.execute-api.us-east-1.amazonaws.com';
+        const TITILER = 'https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com';
         const COUNTIES_URL = 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/new-york-counties.geojson';
         const YEARS = Array.from({length: 34}, (_, i) => 1990 + i);  // 1990..2023
 
@@ -198,10 +198,12 @@
         }).addTo(map);
 
         function cogUrl(variable, year) {
-            return `s3://osc/esf-${variable}/${variable}_${year}_cog.tif`;
+            return `s3://cafri/esf-${variable}/${variable}_${year}_cog.tif`;
         }
         function tileUrl(variable, year) {
-            return `${TITILER}/esf/tiles/WebMercatorQuad/{z}/{x}/{y}.png?variable=${variable}&time=${year}&colormap_name=viridis`;
+            const rescale = `0,${VAR_INFO[variable].max}`;
+            return `${TITILER}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png`
+                + `?url=${encodeURIComponent(cogUrl(variable, year))}&rescale=${rescale}&colormap_name=viridis`;
         }
 
         function updateTileLayer() {
