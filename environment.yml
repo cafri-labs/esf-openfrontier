@@ -7,6 +7,7 @@ dependencies:
   - boto3
   - fsspec
   - gdal
+  - geopandas
   - hvplot
   - numpy
   - odc-stac

@@ -3,10 +3,12 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Greene County — Forest Carbon</title>
+    <title>Forest Carbon — NYS Parcels</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/flatgeobuf@3.34.0/dist/flatgeobuf-geojson.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; overflow: hidden; }
@@ -108,6 +110,14 @@
         .stat-card {
             background: #f7f9f7; border: 1px solid #e0ece5; border-radius: 8px; padding: 10px 12px;
         }
+        .source-label {
+            font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; color: #aaa; margin: 12px 0 4px;
+        }
+        .api-section { font-family: 'IBM Plex Mono', monospace; }
+        .api-section .stat-label { font-family: 'IBM Plex Mono', monospace; }
+        .api-section .stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+        .stat-row { margin: 8px 0; }
         .stat-label { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; }
         .stat-value { font-size: 18px; font-weight: 700; color: #2d6a4f; margin-top: 2px; }
         .stat-sub   { font-size: 10px; color: #888; margin-top: 1px; }
@@ -145,10 +155,16 @@
     <!-- Sidebar -->
     <div id="sidebar">
         <div class="sidebar-header">
-            <h2>Forest Carbon &mdash; Greene County</h2>
+            <h2>Forest Carbon &mdash; NYS Parcels</h2>
             <p>Aboveground &amp; Belowground Carbon, 1990&ndash;2023</p>
         </div>
         <div class="sidebar-body">
+
+            <!-- Town selector -->
+            <div class="search-row">
+                <input id="town-input" class="search-input" placeholder="Jump to town&hellip;" autocomplete="off" list="town-list">
+                <datalist id="town-list"></datalist>
+            </div>
 
             <!-- Address search -->
             <div class="search-row">
@@ -164,7 +180,7 @@
                 <h3>About This Tool</h3>
                 <p>
                     This viewer displays annual estimates of forest carbon stored in
-                    Greene County tax parcels, derived from <strong>Landsat satellite imagery</strong>
+                    Tax parcels, derived from <strong>Landsat satellite imagery</strong>
                     at 30&nbsp;m resolution. Data spans <strong>1990&ndash;2023</strong> and is produced
                     by ESF and Frontier Geospatial.
                 </p>
@@ -188,11 +204,12 @@
 
     <!-- Map -->
     <div id="map"></div>
-    <div id="loading">Loading parcels...</div>
+    <div id="loading">Zoom in to see parcels</div>
 
     <script>
         const TITILER    = 'https://rq1vo2j0e9.execute-api.us-east-1.amazonaws.com';
         const R2_BUCKET  = 'cafri';
+        const PARCELS_BASE = 'https://pub-5e262849391a4575bf6b28d7b3c19ba7.r2.dev/parcels';
         const YEARS      = Array.from({ length: 34 }, (_, i) => 1990 + i);
         const PIXEL_AREA = 0.09; // 30 m × 30 m = 0.09 ha
 
@@ -220,12 +237,18 @@
         function showParcelHeader(parcelProps) {
             resultsDivider.style.display = '';
             resultsSection.innerHTML = `
+                <div class="source-label">Parcel data</div>
                 <div class="parcel-class">${propClassLabel(parcelProps.PROP_CLASS)}</div>
                 <div class="parcel-id-wrap">
                     <span class="parcel-id-label">Tax ID</span>
                     <span class="parcel-id">${parcelProps.SWIS_SBL_ID}</span>
                 </div>
-                <div class="parcel-meta">${parcelProps.acres} acres &nbsp;&middot;&nbsp; Greene County</div>
+                <div class="parcel-meta">${(+parcelProps.acres).toFixed(1)} acres &nbsp;&middot;&nbsp; ${parcelProps.COUNTY_NAME} County</div>
+                <div class="stat-row">
+                    <div class="stat-label">AGC change 1990&ndash;2023 (pre-calculated)</div>
+                    <div class="stat-value" style="font-size:14px;">${parcelProps.live_c_delta_90_23_sum != null ? (parcelProps.live_c_delta_90_23_sum >= 0 ? '+' : '') + Math.round(parcelProps.live_c_delta_90_23_sum).toLocaleString() + ' Mg C' : 'N/A'}</div>
+                </div>
+                <div class="source-label">Raster analysis</div>
                 <button class="load-btn" id="load-btn">Load carbon history (1990&ndash;2023)</button>
                 <div id="chart-area"></div>
             `;
@@ -254,8 +277,18 @@
             }
 
             chartArea.innerHTML = `
-                <div class="chart-wrap"><canvas id="carbon-chart" height="220"></canvas></div>
-                <button class="download-btn" id="download-csv-btn">&#8595; Download CSV</button>
+                <div class="api-section">
+                    <div class="chart-wrap"><canvas id="carbon-chart" height="220"></canvas></div>
+                    <div class="stat-row">
+                        <div class="stat-label">AGC change</div>
+                        <div class="stat-value">${fmtDelta(agcDelta)}</div>
+                    </div>
+                    <div class="stat-row">
+                        <div class="stat-label">BGC change</div>
+                        <div class="stat-value">${fmtDelta(bgcDelta)}</div>
+                    </div>
+                    <button class="download-btn" id="download-csv-btn">&#8595; Download CSV</button>
+                </div>
             `;
 
             document.getElementById('download-csv-btn').addEventListener('click', () => {
@@ -348,6 +381,30 @@
             if (e.key === 'Enter') handleSearch();
         });
 
+        // ── Town selector ──────────────────────────────────────────────
+        const townBounds = {};  // name → L.LatLngBounds
+        fetch('ny_towns.geojson')
+            .then(r => r.json())
+            .then(data => {
+                const dl = document.getElementById('town-list');
+                data.features
+                    .sort((a, b) => a.properties.name.localeCompare(b.properties.name))
+                    .forEach(f => {
+                        townBounds[f.properties.name] = L.geoJSON(f).getBounds();
+                        const opt = document.createElement('option');
+                        opt.value = f.properties.name;
+                        dl.appendChild(opt);
+                    });
+            });
+
+        document.getElementById('town-input').addEventListener('input', e => {
+            const bounds = townBounds[e.target.value];
+            if (bounds) {
+                map.setView(bounds.getCenter(), 12);
+                e.target.value = '';
+            }
+        });
+
         // ── Map setup ─────────────────────────────────────────────────
         function parseHash() {
             const params = {};
@@ -435,13 +492,13 @@
         legendCtrl.onAdd = function() {
             const div = L.DomUtil.create('div', 'map-legend');
             div.innerHTML = `
-                <div class="legend-title">AGC change 1990&ndash;2023 (Mg C/ha)</div>
+                <div class="legend-title">AGC change 1990&ndash;2023 (Mg C)</div>
                 <div class="legend-items">
                     <div class="legend-item"><span class="legend-swatch" style="background:#E69F00"></span> Loss (&lt;&nbsp;0)</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#fffde7"></span> 0 – 20</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#80cbc4"></span> 20 – 40</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#00838f"></span> 40 – 60</div>
-                    <div class="legend-item"><span class="legend-swatch" style="background:#006064"></span> 60+</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#fffde7"></span> 0 – 250</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#80cbc4"></span> 250 – 800</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#00838f"></span> 800 – 2,100</div>
+                    <div class="legend-item"><span class="legend-swatch" style="background:#006064"></span> 2,100+</div>
                 </div>
             `;
             L.DomEvent.disableClickPropagation(div);
@@ -455,20 +512,20 @@
         let highlightedLayer = null;
         let selectedLayer    = null;
 
-        // Choropleth: live carbon delta 1990–2023 (Mg C/ha mean)
+        // Choropleth: live carbon delta 1990–2023 (total Mg C sum)
         function getDeltaColor(v) {
             if (v == null) return '#cccccc';
-            if (v <   0)  return '#E69F00';
-            if (v <  20)  return '#fffde7';
-            if (v <  40)  return '#80cbc4';
-            if (v <  60)  return '#00838f';
+            if (v <    0) return '#E69F00';
+            if (v <  250) return '#fffde7';
+            if (v <  800) return '#80cbc4';
+            if (v < 2100) return '#00838f';
             return '#006064';
         }
 
         function parcelStyle(feature) {
             return {
                 color: '#444', weight: 0.4, opacity: parcelOpacity,
-                fillColor: getDeltaColor(feature.properties.live_c_delta_90_23_mean),
+                fillColor: getDeltaColor(feature.properties.live_c_delta_90_23_sum),
                 fillOpacity: parcelOpacity
             };
         }
@@ -802,36 +859,84 @@
             });
         }
 
-        const loadingEl = document.getElementById('loading');
-        loadingEl.style.display = 'block';
+        const COUNTIES = [
+            'albany', 'allegany', 'bronx', 'broome', 'cattaraugus', 'cayuga',
+            'chautauqua', 'chemung', 'chenango', 'clinton', 'columbia', 'cortland',
+            'delaware', 'dutchess', 'erie', 'essex', 'franklin', 'fulton',
+            'genesee', 'greene', 'hamilton', 'herkimer', 'jefferson', 'kings',
+            'lewis', 'livingston', 'madison', 'monroe', 'montgomery', 'nassau',
+            'newyork', 'niagara', 'oneida', 'onondaga', 'ontario', 'orange',
+            'orleans', 'oswego', 'otsego', 'putnam', 'queens', 'rensselaer',
+            'richmond', 'rockland', 'saratoga', 'schenectady', 'schoharie',
+            'schuyler', 'seneca', 'stlawrence', 'steuben', 'suffolk', 'sullivan',
+            'tioga', 'tompkins', 'ulster', 'warren', 'washington', 'wayne',
+            'westchester', 'wyoming', 'yates'
+        ];
+        const ZOOM_THRESHOLD = 12;
 
-        fetch('green_county.geojson')
-            .then(r => r.json())
-            .then(data => {
+        const loadingEl = document.getElementById('loading');
+        let loadAbort = null;
+
+        async function loadParcelsInView() {
+            if (loadAbort) loadAbort.abort();
+            loadAbort = new AbortController();
+            const signal = loadAbort.signal;
+
+            if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
+
+            loadingEl.textContent = 'Loading parcels...';
+            loadingEl.style.display = 'block';
+
+            const b = map.getBounds();
+            const rect = { minX: b.getWest(), minY: b.getSouth(), maxX: b.getEast(), maxY: b.getNorth() };
+
+            parcelLayer = L.geoJSON(null, { style: parcelStyle, onEachFeature: onEachParcel });
+            try {
+                await Promise.all(COUNTIES.map(async county => {
+                    const url = `${PARCELS_BASE}/${county}.fgb`;
+                    for await (const feature of flatgeobuf.deserialize(url, rect)) {
+                        if (signal.aborted) return;
+                        parcelLayer.addData(feature);
+                    }
+                }));
+                if (signal.aborted) return;
                 loadingEl.style.display = 'none';
-                parcelLayer = L.geoJSON(data, { style: parcelStyle, onEachFeature: onEachParcel });
                 updateParcelVisibility();
-            })
-            .catch(err => {
-                loadingEl.textContent = 'Failed to load parcels';
-                console.error(err);
-            });
+            } catch (err) {
+                if (!signal.aborted) {
+                    loadingEl.textContent = 'Failed to load parcels';
+                    console.error(err);
+                }
+            }
+        }
 
         function updateParcelVisibility() {
-            if (!parcelLayer) return;
-            const shouldShow = parcelOpacity > 0 && map.getZoom() > 10;
-            if (shouldShow && !map.hasLayer(parcelLayer)) {
+            const shouldShow = parcelOpacity > 0 && map.getZoom() >= ZOOM_THRESHOLD;
+            if (shouldShow && parcelLayer && !map.hasLayer(parcelLayer)) {
                 parcelLayer.addTo(map);
                 parcelLayer.bringToFront();
-            } else if (!shouldShow && map.hasLayer(parcelLayer)) {
+            } else if (!shouldShow && parcelLayer && map.hasLayer(parcelLayer)) {
                 map.removeLayer(parcelLayer);
             }
-            if (shouldShow) {
+            if (shouldShow && parcelLayer) {
                 parcelLayer.setStyle({ fillOpacity: parcelOpacity, opacity: parcelOpacity });
             }
         }
 
-        map.on('zoomend', updateParcelVisibility);
+        if (map.getZoom() >= ZOOM_THRESHOLD) loadParcelsInView();
+
+        let moveTimer = null;
+        map.on('zoomend moveend', () => {
+            clearTimeout(moveTimer);
+            if (map.getZoom() >= ZOOM_THRESHOLD) {
+                moveTimer = setTimeout(loadParcelsInView, 300);
+            } else {
+                if (loadAbort) { loadAbort.abort(); loadAbort = null; }
+                if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
+                loadingEl.textContent = 'Zoom in to see parcels';
+                loadingEl.style.display = 'block';
+            }
+        });
     </script>
 </body>
 </html>
