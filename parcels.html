@@ -110,6 +110,8 @@
         .stat-card {
             background: #f7f9f7; border: 1px solid #e0ece5; border-radius: 8px; padding: 10px 12px;
         }
+
+
         .source-label {
             font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
             text-transform: uppercase; color: #aaa; margin: 12px 0 4px;
@@ -352,7 +354,7 @@
                 format: 'json',
                 limit: 1,
                 countrycodes: 'us',
-                viewbox: '-74.8,41.85,-73.6,42.65',
+                viewbox: '-79.8,40.5,-71.8,45.1',
                 bounded: 0
             });
             const r = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
@@ -428,9 +430,9 @@
         }
 
         const h = parseHash();
-        const initLat  = parseFloat(h.lat) || 42.25;
-        const initLon  = parseFloat(h.lon) || -74.2;
-        const initZoom = parseInt(h.z)     || 11;
+        const initLat  = parseFloat(h.lat) || 42.9;
+        const initLon  = parseFloat(h.lon) || -75.6;
+        const initZoom = parseInt(h.z)     || 7;
 
         const map = L.map('map').setView([initLat, initLon], initZoom);
 
@@ -506,6 +508,7 @@
         };
         legendCtrl.addTo(map);
 
+
         // ── Parcel layer ──────────────────────────────────────────────
         let parcelLayer      = null;
         let parcelOpacity    = 0.5;
@@ -533,7 +536,7 @@
             return { ...parcelStyle(feature), weight: 2.2, color: '#111', fillOpacity: Math.min(parcelOpacity + 0.2, 1) };
         }
         function selectedStyle(feature) {
-            return { ...parcelStyle(feature), weight: 3, color: '#000', fillOpacity: Math.min(parcelOpacity + 0.3, 1) };
+            return { ...parcelStyle(feature), weight: 4, color: '#e8000d', opacity: 1, fillOpacity: Math.min(parcelOpacity + 0.3, 1), dashArray: null };
         }
 
         const PROP_CLASS_LABELS = {
@@ -828,11 +831,22 @@
             return PROP_CLASS_LABELS[String(code)] || `Class ${code}`;
         }
 
+        function selectParcel(layer) {
+            if (selectedLayer) selectedLayer.setStyle(parcelStyle(selectedLayer.feature));
+            selectedLayer = layer;
+            selectedLayer.setStyle(selectedStyle(layer.feature));
+            if (activeChart) { activeChart.destroy(); activeChart = null; }
+            showParcelHeader(layer.feature.properties);
+            document.getElementById('load-btn').addEventListener('click', () => {
+                loadCarbonHistory(layer.feature, layer.feature.properties);
+            });
+        }
+
         function onEachParcel(feature, layer) {
             layer.on({
                 mouseover(e) {
                     if (e.target === selectedLayer) return;
-                    if (highlightedLayer && highlightedLayer !== e.target) {
+                    if (highlightedLayer && highlightedLayer !== e.target && highlightedLayer !== selectedLayer) {
                         highlightedLayer.setStyle(parcelStyle(highlightedLayer.feature));
                     }
                     e.target.setStyle(highlightStyle(feature));
@@ -845,16 +859,7 @@
                 },
                 click(e) {
                     L.DomEvent.stopPropagation(e);
-                    if (selectedLayer) selectedLayer.setStyle(parcelStyle(selectedLayer.feature));
-                    selectedLayer = e.target;
-                    selectedLayer.setStyle(selectedStyle(feature));
-
-                    if (activeChart) { activeChart.destroy(); activeChart = null; }
-                    showParcelHeader(feature.properties);
-
-                    document.getElementById('load-btn').addEventListener('click', () => {
-                        loadCarbonHistory(feature, feature.properties);
-                    });
+                    selectParcel(e.target);
                 }
             });
         }
@@ -876,13 +881,16 @@
 
         const loadingEl = document.getElementById('loading');
         let loadAbort = null;
+        const loadedParcelIds = new Set();
 
         async function loadParcelsInView() {
             if (loadAbort) loadAbort.abort();
             loadAbort = new AbortController();
             const signal = loadAbort.signal;
 
-            if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
+            if (!parcelLayer) {
+                parcelLayer = L.geoJSON(null, { style: parcelStyle, onEachFeature: onEachParcel });
+            }
 
             loadingEl.textContent = 'Loading parcels...';
             loadingEl.style.display = 'block';
@@ -890,13 +898,16 @@
             const b = map.getBounds();
             const rect = { minX: b.getWest(), minY: b.getSouth(), maxX: b.getEast(), maxY: b.getNorth() };
 
-            parcelLayer = L.geoJSON(null, { style: parcelStyle, onEachFeature: onEachParcel });
             try {
                 await Promise.all(COUNTIES.map(async county => {
                     const url = `${PARCELS_BASE}/${county}.fgb`;
                     for await (const feature of flatgeobuf.deserialize(url, rect)) {
                         if (signal.aborted) return;
-                        parcelLayer.addData(feature);
+                        const id = feature.properties.SWIS_SBL_ID;
+                        if (!loadedParcelIds.has(id)) {
+                            loadedParcelIds.add(id);
+                            parcelLayer.addData(feature);
+                        }
                     }
                 }));
                 if (signal.aborted) return;
@@ -920,6 +931,7 @@
             }
             if (shouldShow && parcelLayer) {
                 parcelLayer.setStyle({ fillOpacity: parcelOpacity, opacity: parcelOpacity });
+                if (selectedLayer) selectedLayer.setStyle(selectedStyle(selectedLayer.feature));
             }
         }
 
@@ -932,7 +944,8 @@
                 moveTimer = setTimeout(loadParcelsInView, 300);
             } else {
                 if (loadAbort) { loadAbort.abort(); loadAbort = null; }
-                if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
+                if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; selectedLayer = null; }
+                loadedParcelIds.clear();
                 loadingEl.textContent = 'Zoom in to see parcels';
                 loadingEl.style.display = 'block';
             }
