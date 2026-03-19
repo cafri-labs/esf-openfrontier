@@ -148,7 +148,7 @@
             position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
             z-index: 2000; background: rgba(255,255,255,0.9); padding: 6px 14px;
             border-radius: 20px; box-shadow: 0 1px 6px rgba(0,0,0,0.2);
-            font-size: 12px; color: #666; display: none;
+            font-size: 15px; color: #666; display: none;
         }
     </style>
 </head>
@@ -246,10 +246,6 @@
                     <span class="parcel-id">${parcelProps.SWIS_SBL_ID}</span>
                 </div>
                 <div class="parcel-meta">${(+parcelProps.acres).toFixed(1)} acres &nbsp;&middot;&nbsp; ${parcelProps.COUNTY_NAME} County</div>
-                <div class="stat-row">
-                    <div class="stat-label">AGC change 1990&ndash;2023 (pre-calculated)</div>
-                    <div class="stat-value" style="font-size:14px;">${parcelProps.live_c_delta_90_23_sum != null ? (parcelProps.live_c_delta_90_23_sum >= 0 ? '+' : '') + Math.round(parcelProps.live_c_delta_90_23_sum).toLocaleString() + ' Mg C' : 'N/A'}</div>
-                </div>
                 <div class="source-label">Raster analysis</div>
                 <button class="load-btn" id="load-btn">Load carbon history (1990&ndash;2023)</button>
                 <div id="chart-area"></div>
@@ -935,7 +931,12 @@
             }
         }
 
-        if (map.getZoom() >= ZOOM_THRESHOLD) loadParcelsInView();
+        if (map.getZoom() >= ZOOM_THRESHOLD) {
+            loadParcelsInView();
+        } else {
+            loadingEl.textContent = 'Zoom in to see parcels';
+            loadingEl.style.display = 'block';
+        }
 
         let moveTimer = null;
         map.on('zoomend moveend', () => {
