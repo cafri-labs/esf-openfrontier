@@ -188,6 +188,9 @@ cython_debug/
 
 # Generated artifacts
 cogs/
+parcels/
+*.gpkg
+*.fgb
 stac/
 
 # Titiler CDK deployment (cloned separately, not part of this repo)
