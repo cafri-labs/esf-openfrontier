@@ -1,0 +1,9 @@
+# Normalize line endings to LF for all text files
+* text=auto eol=lf
+
+# Binary files - no line ending conversion
+*.gpkg binary
+*.fgb binary
+*.tif binary
+*.png binary
+*.jpg binary

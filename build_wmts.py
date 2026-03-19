@@ -84,6 +84,19 @@ def build_layer(var, year, var_info):
         </Layer>"""
 
 
+def build_themes():
+    """Build the WMTS Themes XML block for grouping layers by variable."""
+    themes = []
+    for var, var_info in VARIABLES.items():
+        refs = '\n'.join(f'        <LayerRef>{var.upper()}_{year}</LayerRef>' for year in YEARS)
+        themes.append(f"""        <Theme>
+            <ows:Title>{var.upper()} - {var_info['title']}</ows:Title>
+            <ows:Identifier>{var.upper()}</ows:Identifier>
+{refs}
+        </Theme>""")
+    return '        <Themes>\n' + '\n'.join(themes) + '\n        </Themes>'
+
+
 def build_wmts():
     """Generate the combined WMTS Capabilities XML."""
     getcaps_url = 'https://cafri-labs.github.io/esf-openfrontier/WMTSCapabilities.xml'
@@ -95,6 +108,7 @@ def build_wmts():
 
     n_layers = len(layers)
     layers_xml = '\n'.join(layers)
+    themes_xml = build_themes()
 
     # WebMercatorQuad TileMatrixSet definition (EPSG:3857, standard Google/OSM grid)
     tile_matrices = ''
@@ -160,6 +174,7 @@ def build_wmts():
     </ows:OperationsMetadata>
     <Contents>
 {layers_xml}
+{themes_xml}
         <TileMatrixSet>
             <ows:Identifier>WebMercatorQuad</ows:Identifier>
             <ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>{tile_matrices}

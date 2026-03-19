@@ -191,6 +191,8 @@ cogs/
 parcels/
 *.gpkg
 *.fgb
+*.qmd
+.claude/
 stac/
 
 # Titiler CDK deployment (cloned separately, not part of this repo)
