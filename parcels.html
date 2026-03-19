@@ -162,6 +162,12 @@
         </div>
         <div class="sidebar-body">
 
+            <!-- County selector -->
+            <div class="search-row">
+                <input id="county-input" class="search-input" placeholder="Jump to county&hellip;" autocomplete="off" list="county-list">
+                <datalist id="county-list"></datalist>
+            </div>
+
             <!-- Town selector -->
             <div class="search-row">
                 <input id="town-input" class="search-input" placeholder="Jump to town&hellip;" autocomplete="off" list="town-list">
@@ -351,7 +357,7 @@
                 limit: 1,
                 countrycodes: 'us',
                 viewbox: '-79.8,40.5,-71.8,45.1',
-                bounded: 0
+                bounded: 1
             });
             const r = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
                 headers: { 'Accept-Language': 'en' }
@@ -379,21 +385,44 @@
             if (e.key === 'Enter') handleSearch();
         });
 
-        // ── Town selector ──────────────────────────────────────────────
-        const townBounds = {};  // name → L.LatLngBounds
+        // ── Town / County selector ─────────────────────────────────────
+        const townBounds = {};    // "Town, County County" → L.LatLngBounds
+        const countyBounds = {};  // "County" → L.LatLngBounds
         fetch('ny_towns.geojson')
             .then(r => r.json())
             .then(data => {
-                const dl = document.getElementById('town-list');
+                const townDl = document.getElementById('town-list');
+                const countyDl = document.getElementById('county-list');
                 data.features
                     .sort((a, b) => a.properties.name.localeCompare(b.properties.name))
                     .forEach(f => {
-                        townBounds[f.properties.name] = L.geoJSON(f).getBounds();
+                        const label = `${f.properties.name}, ${f.properties.county} County`;
+                        const bounds = L.geoJSON(f).getBounds();
+                        townBounds[label] = bounds;
+                        if (countyBounds[f.properties.county]) {
+                            countyBounds[f.properties.county].extend(bounds);
+                        } else {
+                            countyBounds[f.properties.county] = bounds;
+                        }
                         const opt = document.createElement('option');
-                        opt.value = f.properties.name;
-                        dl.appendChild(opt);
+                        opt.value = label;
+                        townDl.appendChild(opt);
                     });
+                Object.keys(countyBounds).sort().forEach(county => {
+                    const opt = document.createElement('option');
+                    opt.value = `${county} County`;
+                    countyDl.appendChild(opt);
+                });
             });
+
+        document.getElementById('county-input').addEventListener('input', e => {
+            const county = e.target.value.replace(/ County$/, '');
+            const bounds = countyBounds[county];
+            if (bounds) {
+                map.fitBounds(bounds);
+                e.target.value = '';
+            }
+        });
 
         document.getElementById('town-input').addEventListener('input', e => {
             const bounds = townBounds[e.target.value];
