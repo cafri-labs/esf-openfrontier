@@ -17,11 +17,11 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-GPKG = Path('NYS_parcels.gpkg')
+GPKG = Path('NY_parcels.gpkg')
 CSV  = Path('ny_property_class_codes.csv')
 OUT  = Path('parcels')
 
-KEEP_FIELDS = ['SWIS_SBL_ID', 'COUNTY_NAME', 'PROP_CLASS', 'live_c_delta_90_23_sum']
+KEEP_FIELDS = ['SWIS_SBL_ID', 'COUNTY_NAME', 'PROP_CLASS', 'live_c_delta_sum']
 
 OUT.mkdir(exist_ok=True)
 
